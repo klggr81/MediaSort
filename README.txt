@@ -3,15 +3,20 @@
 ============================================================
 
 A small Windows toolkit for cleaning up a messy folder of
-photos and videos. Three operations, available as both a GUI
-and individual command-line scripts:
+photos and videos. Three operations, available as a GUI and
+as individual command-line scripts:
 
-  1. Consolidate -- move every image and video from nested
-                    subfolders into top-level images\ and videos\
-  2. Sort by year -- organize files into 2015\, 2016\, ...
-                    using EXIF / media-creation metadata
-  3. Clean up    -- remove dotfiles, Thumbs.db, small junk
+  1. Clean up    -- remove dotfiles, Thumbs.db, small junk
                     files, and empty subfolders
+  2. Consolidate -- move every image and video from nested
+                    subfolders into top-level images\ and videos\
+  3. Sort by year -- organize files in images\ and videos\
+                    into 2015\, 2016\, ... using EXIF /
+                    media-creation metadata
+
+The GUI runs them in that order (cleaning out junk first so
+it doesn't get moved or sorted). Each run produces a
+structured log file in .\Logs\.
 
 ------------------------------------------------------------
   FILES IN THIS FOLDER
@@ -23,42 +28,76 @@ and individual command-line scripts:
 
   Run-MediaTools.ps1      The GUI launcher. Single window with
                           folder picker, three operation cards
-                          with options, progress bar, ETA,
-                          live log, and Cancel button.
+                          with options (including per-extension
+                          file-type checkboxes for consolidate),
+                          progress bar, ETA, live log,
+                          and Cancel button.
 
   Move-MediaFiles.ps1     CLI wrappers for each operation.
   Sort-MediaByYear.ps1    Each one imports the module and
   Cleanup-Junk.ps1        adds a console progress display.
 
+  Logs\                   Created automatically. One .txt
+                          per GUI run, timestamped.
+
   README.txt              This file.
 
-Keep all of these in the same folder. The wrappers and GUI
-each look for MediaTools.psm1 next to themselves.
+Keep all of the scripts in the same folder. The wrappers and
+GUI each look for MediaTools.psm1 next to themselves.
 
 
 ------------------------------------------------------------
   QUICK START (GUI)
 ------------------------------------------------------------
 
-  1. Put all four .ps1/.psm1 files in any folder you like
+  1. Put MediaTools.psm1 + Run-MediaTools.ps1 (plus the three
+     CLI scripts if you want them) in any folder you like
      (e.g. D:\Tools\MediaTools\).
   2. Right-click Run-MediaTools.ps1 -> "Run with PowerShell".
      (If Windows asks, allow it.)
   3. In the GUI:
         - Click Browse... and pick your target folder
           (e.g. D:\Lena Photo Library Mac).
-        - Leave all three operations enabled, or turn off
-          any you don't want.
-        - For a first run, tick "Dry run" on each one to
-          preview without changing anything.
+        - All three operations are enabled by default.
+          Untick any you want to skip.
+        - For Consolidate, all file-type checkboxes are
+          ticked by default. Untick any extensions you do
+          NOT want moved -- e.g. uncheck .heic if you'd
+          rather leave iPhone HEICs in place. Use the
+          "all" / "none" buttons next to each group for
+          quick selection.
+        - For a first run, tick "Dry run" on each operation
+          to preview without changing anything.
         - Click Run.
   4. Watch the progress bar and ETA. The Cancel button stops
      work cleanly between files at any point.
-  5. A summary dialog appears when the run finishes.
+  5. A summary dialog appears when the run finishes, and
+     the log file path is shown at the bottom of the window
+     (click it to open the log).
 
-The first run will probably be a dry run, then you uncheck
-"Dry run" and click Run again. Cleanup defaults to Recycle
-Bin, so even a wrong setting is recoverable.
+
+------------------------------------------------------------
+  WHY THE OPERATIONS RUN IN THIS ORDER
+------------------------------------------------------------
+
+Cleanup goes first so:
+  - The Mac dotfiles (.DS_Store, ._*) and Windows junk
+    (Thumbs.db) are gone before consolidate moves anything.
+  - Empty Mac-export folders disappear up front so they
+    don't clutter what consolidate sees.
+
+Consolidate goes second so:
+  - Everything matching your selected extensions ends up
+    in images\ and videos\.
+  - Anything you UNticked in the file-type list stays in
+    place untouched.
+
+Sort by year goes last so:
+  - It only has to look at images\ and videos\ -- the two
+    folders where everything you wanted to organize now
+    lives.
+  - The GUI automatically runs sort once for each of these
+    two subfolders.
 
 
 ------------------------------------------------------------
@@ -66,79 +105,113 @@ Bin, so even a wrong setting is recoverable.
 ------------------------------------------------------------
 
 Open PowerShell in your target folder (Shift + Right-Click ->
-"Open PowerShell window here"), copy the three .ps1 files +
-MediaTools.psm1 next to your data, and run them in order:
+"Open PowerShell window here"), copy the four files
+(MediaTools.psm1 plus the three .ps1 wrappers) next to your
+data, then:
+
+    .\Cleanup-Junk.ps1 -DryRun
+    .\Cleanup-Junk.ps1
 
     .\Move-MediaFiles.ps1 -DryRun
     .\Move-MediaFiles.ps1
 
     cd images
-    ..\Sort-MediaByYear.ps1 -DryRun     # script + module must be reachable
+    ..\Sort-MediaByYear.ps1 -DryRun
     ..\Sort-MediaByYear.ps1
     cd ..\videos
     ..\Sort-MediaByYear.ps1 -DryRun
     ..\Sort-MediaByYear.ps1
     cd ..
 
-    .\Cleanup-Junk.ps1 -DryRun
-    .\Cleanup-Junk.ps1
-
-If PowerShell refuses to run scripts ("running scripts is
-disabled on this system"), unblock for the current window
-only -- nothing permanent:
+If PowerShell refuses to run scripts:
 
     Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
-The cleaner pattern for the CLI scripts is to just drop a
-copy of all four files into each folder you're working on,
-the way the originals were designed. The GUI works on a
-single chosen folder so there's no copying around.
+The CLI scripts use the full default extension lists. To
+limit which file types are moved by Move-MediaFiles.ps1 from
+the command line, edit the lists at the top of
+MediaTools.psm1, or use the GUI for per-extension control.
 
 
 ------------------------------------------------------------
   GUI DETAILS
 ------------------------------------------------------------
 
-The Run-MediaTools.ps1 window has three operation cards. Each
-card has a checkbox to enable/disable the operation and its
-own options.
+Three operation cards, top to bottom in execution order:
 
-  Card 1 -- Consolidate media files
-      Options: Dry run.
-      Walks the target folder recursively, moves images into
-      images\ and videos into videos\.
-
-  Card 2 -- Sort by year
-      Options: Dry run, Use file dates only.
-      Sorts the contents of images\ and videos\ (the GUI runs
-      this once for each, automatically) into year subfolders.
-
-  Card 3 -- Clean up junk
+  Card 1 -- Clean up junk
       Options: Dry run, Permanent delete, Aggressive size
       filter, Minimum file size (KB).
-      Removes dotfiles, Windows junk, small files, junk
-      folders, and empty subfolders. Items go to the Recycle
-      Bin unless "Permanent delete" is ticked. With Permanent
-      delete on, the GUI shows a confirmation dialog before
-      starting.
+      Removes dotfiles, Windows junk, files below the size
+      threshold, and empty subfolders. Items go to the
+      Recycle Bin unless "Permanent delete" is ticked. With
+      Permanent delete on, the GUI shows a confirmation
+      dialog before starting.
+
+  Card 2 -- Consolidate media files
+      Options: Dry run, plus a checkbox grid for every
+      image and video extension.
+      The "all" / "none" buttons next to each group toggle
+      every extension in that group at once. A run with
+      zero extensions selected is blocked with a warning.
+
+  Card 3 -- Sort by year
+      Options: Dry run, Use file dates only.
+      Sorts the contents of images\ and videos\ (the GUI
+      runs this once for each, automatically) into year
+      subfolders.
 
 The progress card shows the current phase, percentage,
-"current / total" counter, smoothed ETA, and the file
-currently being processed. The "Show log" expander reveals
-a live console-style log of operations -- useful when
-something gets skipped or fails.
+current / total counter, smoothed ETA, and the file currently
+being processed. The "Show log" expander reveals a live
+console-style log of operations. The clickable text below
+the log expander shows the log file path -- click it to open
+the log in your default editor.
 
-The Cancel button is cooperative: the worker checks for it
-between files, so a long-running operation might take a
-moment to actually stop. Closing the window cancels too.
+
+------------------------------------------------------------
+  LOG FILES
+------------------------------------------------------------
+
+Every GUI run automatically writes a structured .txt log to:
+
+    <script folder>\Logs\MediaTools-YYYY-MM-DD_HHmmss.txt
+
+The log includes:
+
+  - A header block with the run start time, target folder,
+    and every enabled operation with its options.
+  - For consolidate, the exact list of image and video
+    extensions used.
+  - A timestamped entry for every action the run takes:
+        Moved: D:\...\IMG_0001.jpg -> D:\...\images\IMG_0001.jpg
+        Sorted: IMG_0001.jpg -> 2017\ (metadata)
+        Removed (junk-name, 6,148 B): D:\...\.DS_Store
+  - Any warnings or failures.
+  - A footer block with the run duration and per-operation
+    summaries (counts, by-year breakdown for sort, MB
+    reclaimed for cleanup, etc.).
+
+The GUI's in-window log box shows only the high-level events
+(phase boundaries, warnings, summaries) so it stays
+readable. The disk log captures every detail.
+
+If a run is cancelled or the window is closed mid-run, the
+log file is still saved with a note marking the
+interruption.
+
+CLI runs do not produce log files automatically. Redirect
+output to capture them:
+
+    .\Cleanup-Junk.ps1 *>&1 | Tee-Object -FilePath cleanup.log
 
 
 ------------------------------------------------------------
   CLI DETAILS
 ------------------------------------------------------------
 
-All three CLI scripts default to operating on the folder they
-live in. Pass -Root to override.
+All three CLI scripts default to operating on the folder
+they live in. Pass -Root to override.
 
   Move-MediaFiles.ps1
       -Root "<path>"    Override target folder.
@@ -148,9 +221,11 @@ live in. Pass -Root to override.
       -Root "<path>"          Override target folder.
       -DryRun                 Preview only.
       -UseFileDateOnly        Skip EXIF/metadata; use file
-                              dates only (faster, less accurate).
-      -UnknownFolderName "X"  Folder name for files without a
-                              usable date. Default: "Unknown".
+                              dates only (faster, less
+                              accurate).
+      -UnknownFolderName "X"  Folder name for files without
+                              a usable date. Default:
+                              "Unknown".
 
   Cleanup-Junk.ps1
       -Root "<path>"           Override target folder.
@@ -161,8 +236,7 @@ live in. Pass -Root to override.
                                images\ and videos\ too.
       -SkipEmptyFolderCleanup  Leave empty subfolders alone.
 
-Each script prints a summary at the end with counts, plus
-any failures.
+Each script prints a summary at the end.
 
 
 ------------------------------------------------------------
@@ -170,8 +244,8 @@ any failures.
 ------------------------------------------------------------
 
 Defined once in MediaTools.psm1 -- edit the `$script:ImageExt`
-and `$script:VideoExt` arrays at the top of the module to add
-formats.
+and `$script:VideoExt` arrays at the top of the module to
+add formats.
 
   Images:
     .jpg  .jpeg .png  .gif  .bmp  .tif  .tiff .webp
@@ -184,7 +258,7 @@ formats.
 
 
 ------------------------------------------------------------
-  HOW THE SORT-BY-YEAR DATES ARE CHOSEN
+  HOW SORT-BY-YEAR PICKS A YEAR
 ------------------------------------------------------------
 
 In priority order:
@@ -199,15 +273,14 @@ In priority order:
 HEIC files (common from iPhones) only expose their metadata
 to Windows if you install the free "HEIF Image Extensions"
 from the Microsoft Store. Without it, HEICs fall back to
-file dates, which may be wrong if the files were copied
-around.
+file dates.
 
 
 ------------------------------------------------------------
   CLEANUP DETAILS
 ------------------------------------------------------------
 
-Cleanup runs in three phases:
+Cleanup runs in three internal phases:
 
   1. Junk folders -- anything starting with "." or named
      __MACOSX is deleted whole, contents included.
@@ -216,16 +289,15 @@ Cleanup runs in three phases:
        - Windows junk: Thumbs.db, ehthumbs.db, desktop.ini.
        - Temp files: *.tmp, *.temp, *~
        - Files smaller than -MinSizeKB.
-     The size filter SKIPS images\ and videos\ by default so
-     a small-but-real photo is safe; -AggressiveSize removes
-     that protection.
-  3. Empty folders -- deepest first, so a folder containing
-     only empty folders also gets cleaned. The images\ and
+     The size filter SKIPS images\ and videos\ by default
+     so a small-but-real photo is safe; -AggressiveSize
+     removes that protection.
+  3. Empty folders -- deepest first. The images\ and
      videos\ folders themselves are protected and never
      deleted, even if empty.
 
-Default delete target is the Recycle Bin. Use -Permanent or
-the GUI's "Permanent delete" checkbox to bypass it.
+Default delete target is the Recycle Bin. Use -Permanent
+(CLI) or the "Permanent delete" checkbox (GUI) to bypass it.
 
 
 ------------------------------------------------------------
@@ -233,15 +305,17 @@ the GUI's "Permanent delete" checkbox to bypass it.
 ------------------------------------------------------------
 
 - Always preview with -DryRun (or the Dry run checkbox)
-  first. The output shows every intended move or deletion
+  first. The log will show every intended move or deletion
   so you can spot problems before they happen.
 - For an irreplaceable photo library, run against a copy
   first, or make sure you have a backup.
 - Cleanup sends items to the Recycle Bin by default. If
   something disappears that shouldn't have, open the Recycle
   Bin and restore it.
-- Only use Permanent delete once a Recycle Bin run has
+- Only tick Permanent delete after a Recycle Bin run has
   confirmed the behavior is what you want.
+- The log file for each run is your audit trail. Keep it
+  until you've verified the run was successful.
 
 
 ------------------------------------------------------------
@@ -255,8 +329,8 @@ the GUI's "Permanent delete" checkbox to bypass it.
 
 "MediaTools.psm1 was not found"
     The wrapper scripts and the GUI need the module in the
-    same folder as themselves. Make sure all four files live
-    side by side.
+    same folder as themselves. Make sure all four files
+    live side by side.
 
 GUI opens, then closes immediately
     Likely a syntax/runtime error. Run from PowerShell instead
@@ -277,13 +351,21 @@ Some files ended up in Unknown\
 
 GUI's ETA jumps around early in a run
     Normal. ETA is calculated from a rolling average and
-    needs a few seconds of data to stabilize. After that
-    it's pretty steady.
+    needs a few seconds of data to stabilize.
 
 Cancel doesn't stop the operation immediately
     Cancellation is cooperative -- the worker checks between
     files. A long-running file operation may take a moment
-    to wrap up. The GUI shows "Cancelling..." in the
-    meantime.
+    to wrap up.
+
+I clicked Run but nothing happens / a checkbox warning shows
+    Make sure at least one operation is ticked, and that
+    Consolidate has at least one file extension selected.
+
+The log file is too big to open
+    Each run produces a separate file in .\Logs\, so logs
+    don't accumulate. If a single run produced a huge log
+    (millions of detail lines), open it in something like
+    Notepad++ or VS Code rather than plain Notepad.
 
 ============================================================

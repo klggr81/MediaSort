@@ -1,17 +1,22 @@
 <#
     MediaTools.psm1
-
     Shared library for the three media-organization operations.
-    Each function supports:
 
+    Each function supports:
       -OnProgress  : a [scriptblock] called with event hashtables
-                     ({Type, Phase, Current, Total, Name, ...})
+                     ({Type, Phase, Current, Total, Name, Level, ...})
       -CancelToken : a hashtable; set $CancelToken.Requested = $true
                      to politely stop work between files.
 
-    The three CLI wrapper scripts (Move-MediaFiles.ps1, Sort-MediaByYear.ps1,
-    Cleanup-Junk.ps1) and the GUI launcher (Run-MediaTools.ps1) all consume
-    this module.
+    Event Types:
+      'phase'      -- a new phase started (Message has description)
+      'scan-done'  -- pre-scan finished (Total has item count)
+      'progress'   -- per-item progress (Current, Total, Name)
+      'log'        -- a human-readable line; Level='info'|'detail'|'warn'
+                      Detail-level events fire per file action; the GUI
+                      can hide these from the in-window log box while
+                      still capturing them to disk.
+      'phase-done' -- phase completed (Summary has the result object)
 #>
 
 # --- Shared extension lists -------------------------------------------------
@@ -57,6 +62,15 @@ function Test-Cancelled {
     return ($CancelToken -and $CancelToken.Requested -eq $true)
 }
 
+function Normalize-Extensions {
+    param([string[]]$Extensions)
+    return @($Extensions | ForEach-Object {
+        $e = $_.ToLower().Trim()
+        if (-not $e.StartsWith('.')) { $e = '.' + $e }
+        $e
+    })
+}
+
 # --- Invoke-MoveMedia -------------------------------------------------------
 
 function Invoke-MoveMedia {
@@ -64,6 +78,8 @@ function Invoke-MoveMedia {
     param(
         [Parameter(Mandatory)][string]$Root,
         [switch]$DryRun,
+        [string[]]$ImageExtensions,
+        [string[]]$VideoExtensions,
         [scriptblock]$OnProgress,
         [hashtable]$CancelToken
     )
@@ -71,15 +87,22 @@ function Invoke-MoveMedia {
     if (-not (Test-Path -LiteralPath $Root)) { throw "Root folder not found: $Root" }
     $Root = (Resolve-Path -LiteralPath $Root).Path
 
+    if (-not $ImageExtensions) { $ImageExtensions = $script:ImageExt }
+    if (-not $VideoExtensions) { $VideoExtensions = $script:VideoExt }
+    $ImageExtensions = Normalize-Extensions $ImageExtensions
+    $VideoExtensions = Normalize-Extensions $VideoExtensions
+
     $ImagesDest = Join-Path $Root 'images'
     $VideosDest = Join-Path $Root 'videos'
     $sep = [IO.Path]::DirectorySeparatorChar
 
-    Send-Progress $OnProgress @{ Type='phase'; Phase='move'; Message="Scanning $Root" }
+    Send-Progress $OnProgress @{ Type='phase'; Phase='move'; Message="Scanning $Root for media to consolidate" }
+    Send-Progress $OnProgress @{ Type='log'; Level='info'; Message="Image extensions: $($ImageExtensions -join ', ')" }
+    Send-Progress $OnProgress @{ Type='log'; Level='info'; Message="Video extensions: $($VideoExtensions -join ', ')" }
 
     $allFiles = @(Get-ChildItem -LiteralPath $Root -Recurse -File -Force -ErrorAction SilentlyContinue | Where-Object {
         $ext = $_.Extension.ToLower()
-        ($script:ImageExt -contains $ext -or $script:VideoExt -contains $ext) -and
+        ($ImageExtensions -contains $ext -or $VideoExtensions -contains $ext) -and
         -not $_.FullName.StartsWith($ImagesDest + $sep, [StringComparison]::OrdinalIgnoreCase) -and
         -not $_.FullName.StartsWith($VideosDest + $sep, [StringComparison]::OrdinalIgnoreCase)
     })
@@ -89,10 +112,11 @@ function Invoke-MoveMedia {
 
     Send-Progress $OnProgress @{ Type='scan-done'; Phase='move'; Total=$total; TotalBytes=$totalBytes }
 
-    if (-not $DryRun) {
+    if (-not $DryRun -and $total -gt 0) {
         foreach ($d in @($ImagesDest, $VideosDest)) {
             if (-not (Test-Path -LiteralPath $d)) {
                 New-Item -ItemType Directory -Path $d -Force | Out-Null
+                Send-Progress $OnProgress @{ Type='log'; Level='info'; Message="Created folder: $d" }
             }
         }
     }
@@ -106,15 +130,16 @@ function Invoke-MoveMedia {
         $i++
 
         $ext = $file.Extension.ToLower()
-        $dest = if ($script:ImageExt -contains $ext) { $ImagesDest } else { $VideosDest }
+        $dest = if ($ImageExtensions -contains $ext) { $ImagesDest } else { $VideosDest }
         $target = Get-UniquePath -Dir $dest -Name $file.Name
 
         $success = $true
         if ($DryRun) {
-            Send-Progress $OnProgress @{ Type='log'; Message="[DRY] $($file.FullName) -> $target" }
+            Send-Progress $OnProgress @{ Type='log'; Level='detail'; Message="[DRY] $($file.FullName) -> $target" }
         } else {
             try {
                 Move-Item -LiteralPath $file.FullName -Destination $target -Force -ErrorAction Stop
+                Send-Progress $OnProgress @{ Type='log'; Level='detail'; Message="Moved: $($file.FullName) -> $target" }
             } catch {
                 Send-Progress $OnProgress @{ Type='log'; Level='warn'; Message="FAILED: $($file.FullName) -- $($_.Exception.Message)" }
                 $failed++
@@ -161,7 +186,7 @@ function Invoke-SortMediaByYear {
 
     $allMediaExt = $script:ImageExt + $script:VideoExt
 
-    Send-Progress $OnProgress @{ Type='phase'; Phase='sort'; Message="Scanning $Root" }
+    Send-Progress $OnProgress @{ Type='phase'; Phase='sort'; Message="Scanning $Root for media to sort by year" }
 
     $allFiles = @(Get-ChildItem -LiteralPath $Root -File -Force -ErrorAction SilentlyContinue | Where-Object {
         $allMediaExt -contains $_.Extension.ToLower()
@@ -177,7 +202,7 @@ function Invoke-SortMediaByYear {
     $dateTakenIdx = -1
     $mediaCreatedIdx = -1
 
-    if (-not $UseFileDateOnly) {
+    if (-not $UseFileDateOnly -and $total -gt 0) {
         try {
             $shell = New-Object -ComObject Shell.Application
             $shellFolder = $shell.Namespace($Root)
@@ -203,7 +228,6 @@ function Invoke-SortMediaByYear {
         if (Test-Cancelled $CancelToken) { $cancelled = $true; break }
         $i++
 
-        # Get year
         $year = $null
         $source = 'file-date'
         $ext = $file.Extension.ToLower()
@@ -243,10 +267,11 @@ function Invoke-SortMediaByYear {
         $success = $true
 
         if ($DryRun) {
-            Send-Progress $OnProgress @{ Type='log'; Message="[DRY] $($file.Name) -> $yearKey\ ($source)" }
+            Send-Progress $OnProgress @{ Type='log'; Level='detail'; Message="[DRY] $($file.Name) -> $yearKey\ ($source)" }
         } else {
             try {
                 Move-Item -LiteralPath $file.FullName -Destination $target -Force -ErrorAction Stop
+                Send-Progress $OnProgress @{ Type='log'; Level='detail'; Message="Sorted: $($file.Name) -> $yearKey\ ($source)" }
             } catch {
                 Send-Progress $OnProgress @{ Type='log'; Level='warn'; Message="FAILED: $($file.FullName) -- $($_.Exception.Message)" }
                 $failed++
@@ -352,7 +377,7 @@ function Invoke-CleanupJunk {
         } catch { return $false }
     }
 
-    Send-Progress $OnProgress @{ Type='phase'; Phase='cleanup'; Message="Scanning $Root" }
+    Send-Progress $OnProgress @{ Type='phase'; Phase='cleanup'; Message="Scanning $Root for junk to remove" }
 
     $junkFolders = @(Get-ChildItem -LiteralPath $Root -Recurse -Directory -Force -ErrorAction SilentlyContinue |
                      Where-Object { & $testJunkFolder $_ })
@@ -368,6 +393,8 @@ function Invoke-CleanupJunk {
 
     $total = $junkFolders.Count + $candidateFiles.Count
     Send-Progress $OnProgress @{ Type='scan-done'; Phase='cleanup'; Total=$total; TotalBytes=0 }
+
+    $dryPrefix = if ($DryRun) { "[DRY] Would remove" } else { "Removed" }
 
     $junkFileCount = 0; $smallFileCount = 0; $junkFolderCount = 0; $emptyFolderCount = 0
     $bytesReclaimed = 0; $failed = 0
@@ -393,7 +420,11 @@ function Invoke-CleanupJunk {
         if (& $removeSafely $dir.FullName $true) {
             $junkFolderCount++
             $bytesReclaimed += $sz
-        } else { $failed++ }
+            Send-Progress $OnProgress @{ Type='log'; Level='detail'; Message="$dryPrefix junk folder ($([math]::Round($sz/1KB,1)) KB): $($dir.FullName)" }
+        } else {
+            $failed++
+            Send-Progress $OnProgress @{ Type='log'; Level='warn'; Message="FAILED to remove folder: $($dir.FullName)" }
+        }
 
         Send-Progress $OnProgress @{ Type='progress'; Phase='cleanup'; Current=$i; Total=$total; Name=$dir.Name; BytesProcessed=$bytesReclaimed }
     }
@@ -409,10 +440,15 @@ function Invoke-CleanupJunk {
             }
 
             $isJunk = & $testJunkFile $file
+            $reason = if ($isJunk) { 'junk-name' } else { "<${MinSizeKB}KB" }
             if (& $removeSafely $file.FullName $false) {
                 if ($isJunk) { $junkFileCount++ } else { $smallFileCount++ }
                 $bytesReclaimed += $file.Length
-            } else { $failed++ }
+                Send-Progress $OnProgress @{ Type='log'; Level='detail'; Message=("{0} ({1}, {2} B): {3}" -f $dryPrefix, $reason, $file.Length, $file.FullName) }
+            } else {
+                $failed++
+                Send-Progress $OnProgress @{ Type='log'; Level='warn'; Message="FAILED to remove: $($file.FullName)" }
+            }
 
             Send-Progress $OnProgress @{ Type='progress'; Phase='cleanup'; Current=$i; Total=$total; Name=$file.Name; BytesProcessed=$bytesReclaimed }
         }
@@ -433,8 +469,12 @@ function Invoke-CleanupJunk {
             } catch { continue }
             if ($hasContent) { continue }
 
-            if (& $removeSafely $dir.FullName $true) { $emptyFolderCount++ }
-            else { $failed++ }
+            if (& $removeSafely $dir.FullName $true) {
+                $emptyFolderCount++
+                Send-Progress $OnProgress @{ Type='log'; Level='detail'; Message="$dryPrefix empty folder: $($dir.FullName)" }
+            } else {
+                $failed++
+            }
         }
     }
 

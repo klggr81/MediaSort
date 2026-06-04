@@ -1,6 +1,6 @@
 <#
     Run-MediaTools.ps1
-    GUI launcher for Move-MediaFiles, Sort-MediaByYear, and Cleanup-Junk.
+    GUI launcher for MediaTools.psm1.
 
     Requires MediaTools.psm1 in the same folder.
 
@@ -9,6 +9,8 @@
     "Run with PowerShell", or open PowerShell and run:
         Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
         .\Run-MediaTools.ps1
+
+    Each run produces a structured log file in .\Logs\.
 #>
 
 #requires -Version 5.1
@@ -20,7 +22,7 @@ Add-Type -AssemblyName PresentationCore
 Add-Type -AssemblyName WindowsBase
 Add-Type -AssemblyName System.Windows.Forms
 
-# --- Locate module ----------------------------------------------------------
+# --- Locate and load module -------------------------------------------------
 
 $ScriptDir = $PSScriptRoot
 if (-not $ScriptDir) { $ScriptDir = (Get-Location).Path }
@@ -31,13 +33,15 @@ if (-not (Test-Path $modulePath)) {
         "Media Tools", 'OK', 'Error') | Out-Null
     exit 1
 }
+Import-Module $modulePath -Force
+$LogsDir = Join-Path $ScriptDir 'Logs'
 
 # --- XAML -------------------------------------------------------------------
 
 [xml]$xaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Media Tools" Height="760" Width="820"
+        Title="Media Tools" Height="820" Width="860"
         WindowStartupLocation="CenterScreen"
         Background="#F3F3F3"
         FontFamily="Segoe UI Variable, Segoe UI" FontSize="14"
@@ -76,6 +80,11 @@ if (-not (Test-Path $modulePath)) {
           </ControlTemplate>
         </Setter.Value>
       </Setter>
+    </Style>
+
+    <Style TargetType="Button" x:Key="MiniButton" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="Padding" Value="8,2"/>
+      <Setter Property="FontSize" Value="11"/>
     </Style>
 
     <Style TargetType="Button" x:Key="AccentButton" BasedOn="{StaticResource {x:Type Button}}">
@@ -173,6 +182,12 @@ if (-not (Test-Path $modulePath)) {
       <Setter Property="TextWrapping" Value="Wrap"/>
     </Style>
 
+    <Style x:Key="SubHeader" TargetType="TextBlock">
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Foreground" Value="#444444"/>
+      <Setter Property="Margin" Value="0,8,8,4"/>
+    </Style>
+
   </Window.Resources>
 
   <Grid Margin="20">
@@ -183,12 +198,13 @@ if (-not (Test-Path $modulePath)) {
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
 
     <!-- Header -->
     <StackPanel Grid.Row="0" Margin="0,0,0,16">
       <TextBlock Text="Media Tools" FontSize="28" FontWeight="SemiBold"/>
-      <TextBlock Text="Consolidate, sort by year, and clean up a folder of photos and videos."
+      <TextBlock Text="Clean up junk, consolidate, and sort a folder of photos and videos."
                  Foreground="#666666" Margin="0,4,0,0"/>
     </StackPanel>
 
@@ -212,47 +228,16 @@ if (-not (Test-Path $modulePath)) {
     <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,4,0">
       <StackPanel>
 
-        <!-- 1. Move -->
-        <Border Style="{StaticResource CardBorder}">
-          <StackPanel>
-            <CheckBox x:Name="EnableMove" IsChecked="True">
-              <TextBlock Style="{StaticResource OpHeader}" Text="1. Consolidate media files"/>
-            </CheckBox>
-            <TextBlock Style="{StaticResource OpHint}">
-              Recursively gathers every image into <Run FontWeight="SemiBold">images\</Run> and every video into <Run FontWeight="SemiBold">videos\</Run>.
-            </TextBlock>
-            <StackPanel Orientation="Horizontal" Margin="28,0,0,0">
-              <CheckBox x:Name="MoveDryRun" Content="Dry run (preview only)"/>
-            </StackPanel>
-          </StackPanel>
-        </Border>
-
-        <!-- 2. Sort -->
-        <Border Style="{StaticResource CardBorder}">
-          <StackPanel>
-            <CheckBox x:Name="EnableSort" IsChecked="True">
-              <TextBlock Style="{StaticResource OpHeader}" Text="2. Sort by year"/>
-            </CheckBox>
-            <TextBlock Style="{StaticResource OpHint}">
-              Sorts files in <Run FontWeight="SemiBold">images\</Run> and <Run FontWeight="SemiBold">videos\</Run> into year subfolders (2015\, 2016\, ...) using EXIF / media metadata when available.
-            </TextBlock>
-            <StackPanel Orientation="Horizontal" Margin="28,0,0,0">
-              <CheckBox x:Name="SortDryRun" Content="Dry run" Margin="0,0,18,0"/>
-              <CheckBox x:Name="SortFileDateOnly" Content="Use file dates only (skip metadata)"/>
-            </StackPanel>
-          </StackPanel>
-        </Border>
-
-        <!-- 3. Cleanup -->
+        <!-- 1. Cleanup -->
         <Border Style="{StaticResource CardBorder}">
           <StackPanel>
             <CheckBox x:Name="EnableCleanup" IsChecked="True">
-              <TextBlock Style="{StaticResource OpHeader}" Text="3. Clean up junk"/>
+              <TextBlock Style="{StaticResource OpHeader}" Text="1. Clean up junk"/>
             </CheckBox>
             <TextBlock Style="{StaticResource OpHint}">
               Removes dotfiles (.DS_Store, ._*), Thumbs.db, small files, junk folders, and empty subfolders. Items go to the Recycle Bin by default.
             </TextBlock>
-            <StackPanel Orientation="Horizontal" Margin="28,0,0,4" >
+            <StackPanel Orientation="Horizontal" Margin="28,0,0,4">
               <CheckBox x:Name="CleanupDryRun" Content="Dry run" Margin="0,0,18,0"/>
               <CheckBox x:Name="CleanupPermanent" Content="Permanent delete" Margin="0,0,18,0"/>
               <CheckBox x:Name="CleanupAggressive" Content="Aggressive size filter"/>
@@ -261,6 +246,51 @@ if (-not (Test-Path $modulePath)) {
               <TextBlock Text="Minimum file size:" VerticalAlignment="Center" Margin="0,0,8,0"/>
               <TextBox x:Name="CleanupMinSize" Text="10" Width="48"/>
               <TextBlock Text="KB" VerticalAlignment="Center" Margin="8,0,0,0"/>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <!-- 2. Consolidate -->
+        <Border Style="{StaticResource CardBorder}">
+          <StackPanel>
+            <CheckBox x:Name="EnableMove" IsChecked="True">
+              <TextBlock Style="{StaticResource OpHeader}" Text="2. Consolidate media files"/>
+            </CheckBox>
+            <TextBlock Style="{StaticResource OpHint}">
+              Recursively gathers images into <Run FontWeight="SemiBold">images\</Run> and videos into <Run FontWeight="SemiBold">videos\</Run>. Pick which file types to include below.
+            </TextBlock>
+            <StackPanel Orientation="Horizontal" Margin="28,0,0,4">
+              <CheckBox x:Name="MoveDryRun" Content="Dry run (preview only)"/>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" Margin="28,8,0,0">
+              <TextBlock Style="{StaticResource SubHeader}" Text="Images" VerticalAlignment="Center"/>
+              <Button x:Name="ImageAllBtn" Style="{StaticResource MiniButton}" Content="all" Margin="4,4,2,0"/>
+              <Button x:Name="ImageNoneBtn" Style="{StaticResource MiniButton}" Content="none" Margin="0,4,0,0"/>
+            </StackPanel>
+            <WrapPanel x:Name="ImageExtPanel" Margin="28,2,0,0"/>
+
+            <StackPanel Orientation="Horizontal" Margin="28,8,0,0">
+              <TextBlock Style="{StaticResource SubHeader}" Text="Videos" VerticalAlignment="Center"/>
+              <Button x:Name="VideoAllBtn" Style="{StaticResource MiniButton}" Content="all" Margin="4,4,2,0"/>
+              <Button x:Name="VideoNoneBtn" Style="{StaticResource MiniButton}" Content="none" Margin="0,4,0,0"/>
+            </StackPanel>
+            <WrapPanel x:Name="VideoExtPanel" Margin="28,2,0,0"/>
+          </StackPanel>
+        </Border>
+
+        <!-- 3. Sort -->
+        <Border Style="{StaticResource CardBorder}">
+          <StackPanel>
+            <CheckBox x:Name="EnableSort" IsChecked="True">
+              <TextBlock Style="{StaticResource OpHeader}" Text="3. Sort by year"/>
+            </CheckBox>
+            <TextBlock Style="{StaticResource OpHint}">
+              Sorts files in <Run FontWeight="SemiBold">images\</Run> and <Run FontWeight="SemiBold">videos\</Run> into year subfolders (2015\, 2016\, ...) using EXIF / media metadata when available.
+            </TextBlock>
+            <StackPanel Orientation="Horizontal" Margin="28,0,0,0">
+              <CheckBox x:Name="SortDryRun" Content="Dry run" Margin="0,0,18,0"/>
+              <CheckBox x:Name="SortFileDateOnly" Content="Use file dates only (skip metadata)"/>
             </StackPanel>
           </StackPanel>
         </Border>
@@ -297,8 +327,14 @@ if (-not (Test-Path $modulePath)) {
       </Border>
     </Expander>
 
+    <!-- Log file path -->
+    <TextBlock Grid.Row="5" x:Name="LogPathText" Margin="0,10,0,0"
+               Foreground="#0078D4" TextDecorations="Underline" Cursor="Hand"
+               TextTrimming="CharacterEllipsis"
+               Text="Log file will be created in .\Logs\ when you click Run."/>
+
     <!-- Action buttons -->
-    <Grid Grid.Row="5" Margin="0,16,0,0">
+    <Grid Grid.Row="6" Margin="0,12,0,0">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="*"/>
         <ColumnDefinition Width="Auto"/>
@@ -322,16 +358,46 @@ $window = [Windows.Markup.XamlReader]::Load($reader)
 
 $controls = @{}
 @('FolderTextBox','BrowseButton',
-  'EnableMove','MoveDryRun',
-  'EnableSort','SortDryRun','SortFileDateOnly',
   'EnableCleanup','CleanupDryRun','CleanupPermanent','CleanupAggressive','CleanupMinSize',
+  'EnableMove','MoveDryRun','ImageExtPanel','VideoExtPanel',
+  'ImageAllBtn','ImageNoneBtn','VideoAllBtn','VideoNoneBtn',
+  'EnableSort','SortDryRun','SortFileDateOnly',
   'StatusText','StatsText','ProgressBar','CurrentFileText',
-  'LogExpander','LogBox','LogScroller',
+  'LogExpander','LogBox','LogScroller','LogPathText',
   'ElapsedText','CancelButton','RunButton') | ForEach-Object {
     $controls[$_] = $window.FindName($_)
 }
 
 $controls.FolderTextBox.Text = $ScriptDir
+
+# --- Populate extension checkboxes -----------------------------------------
+
+$imageExtCheckboxes = @()
+$videoExtCheckboxes = @()
+
+foreach ($ext in (Get-MediaImageExtensions)) {
+    $cb = New-Object System.Windows.Controls.CheckBox
+    $cb.Content = $ext
+    $cb.IsChecked = $true
+    $cb.Margin = '0,2,14,2'
+    $cb.Tag = $ext
+    [void]$controls.ImageExtPanel.Children.Add($cb)
+    $imageExtCheckboxes += $cb
+}
+foreach ($ext in (Get-MediaVideoExtensions)) {
+    $cb = New-Object System.Windows.Controls.CheckBox
+    $cb.Content = $ext
+    $cb.IsChecked = $true
+    $cb.Margin = '0,2,14,2'
+    $cb.Tag = $ext
+    [void]$controls.VideoExtPanel.Children.Add($cb)
+    $videoExtCheckboxes += $cb
+}
+
+$controls.ImageAllBtn.Add_Click({ foreach ($cb in $imageExtCheckboxes) { $cb.IsChecked = $true } })
+$controls.ImageNoneBtn.Add_Click({ foreach ($cb in $imageExtCheckboxes) { $cb.IsChecked = $false } })
+$controls.VideoAllBtn.Add_Click({ foreach ($cb in $videoExtCheckboxes) { $cb.IsChecked = $true } })
+$controls.VideoNoneBtn.Add_Click({ foreach ($cb in $videoExtCheckboxes) { $cb.IsChecked = $false } })
 
 # --- Shared state -----------------------------------------------------------
 
@@ -348,6 +414,8 @@ $script:state = @{
     EwmaRate     = $null
     Summaries    = @()
     LastTotal    = 0
+    LogPath      = $null
+    LogWriter    = $null
 }
 
 # --- Helpers ----------------------------------------------------------------
@@ -360,12 +428,24 @@ function Format-Duration {
     return ("{0}h {1:D2}m" -f [int]$ts.TotalHours, $ts.Minutes)
 }
 
+function Write-LogLine {
+    param([string]$Text)
+    if ($script:state.LogWriter) {
+        try { $script:state.LogWriter.WriteLine($Text) } catch {}
+    }
+}
+
 function Append-Log {
     param([string]$Text, [string]$Level='info')
     $stamp = (Get-Date).ToString('HH:mm:ss')
     $line = "[$stamp] $Text"
-    $controls.LogBox.AppendText($line + "`r`n")
-    $controls.LogScroller.ScrollToEnd()
+
+    Write-LogLine $line
+
+    if ($Level -ne 'detail') {
+        $controls.LogBox.AppendText($line + "`r`n")
+        $controls.LogScroller.ScrollToEnd()
+    }
 }
 
 function Set-Idle {
@@ -373,10 +453,13 @@ function Set-Idle {
     $controls.CancelButton.IsEnabled = $false
     $controls.FolderTextBox.IsEnabled = $true
     $controls.BrowseButton.IsEnabled  = $true
-    foreach ($n in 'EnableMove','MoveDryRun','EnableSort','SortDryRun','SortFileDateOnly',
-                   'EnableCleanup','CleanupDryRun','CleanupPermanent','CleanupAggressive','CleanupMinSize') {
+    foreach ($n in 'EnableCleanup','CleanupDryRun','CleanupPermanent','CleanupAggressive','CleanupMinSize',
+                   'EnableMove','MoveDryRun',
+                   'EnableSort','SortDryRun','SortFileDateOnly',
+                   'ImageAllBtn','ImageNoneBtn','VideoAllBtn','VideoNoneBtn') {
         $controls[$n].IsEnabled = $true
     }
+    foreach ($cb in $imageExtCheckboxes + $videoExtCheckboxes) { $cb.IsEnabled = $true }
 }
 
 function Set-Busy {
@@ -384,10 +467,13 @@ function Set-Busy {
     $controls.CancelButton.IsEnabled = $true
     $controls.FolderTextBox.IsEnabled = $false
     $controls.BrowseButton.IsEnabled  = $false
-    foreach ($n in 'EnableMove','MoveDryRun','EnableSort','SortDryRun','SortFileDateOnly',
-                   'EnableCleanup','CleanupDryRun','CleanupPermanent','CleanupAggressive','CleanupMinSize') {
+    foreach ($n in 'EnableCleanup','CleanupDryRun','CleanupPermanent','CleanupAggressive','CleanupMinSize',
+                   'EnableMove','MoveDryRun',
+                   'EnableSort','SortDryRun','SortFileDateOnly',
+                   'ImageAllBtn','ImageNoneBtn','VideoAllBtn','VideoNoneBtn') {
         $controls[$n].IsEnabled = $false
     }
+    foreach ($cb in $imageExtCheckboxes + $videoExtCheckboxes) { $cb.IsEnabled = $false }
 }
 
 function Update-ETA {
@@ -408,22 +494,15 @@ function Update-ETA {
     return $null
 }
 
+function Get-CheckedExtensions {
+    param($Checkboxes)
+    return @($Checkboxes | Where-Object { $_.IsChecked } | ForEach-Object { $_.Tag })
+}
+
 function Build-OperationList {
     $ops = @()
-    if ($controls.EnableMove.IsChecked) {
-        $ops += [pscustomobject]@{
-            Name   = 'move'
-            DryRun = [bool]$controls.MoveDryRun.IsChecked
-        }
-    }
-    if ($controls.EnableSort.IsChecked) {
-        $opts = @{
-            DryRun          = [bool]$controls.SortDryRun.IsChecked
-            UseFileDateOnly = [bool]$controls.SortFileDateOnly.IsChecked
-        }
-        $ops += [pscustomobject]@{ Name='sort'; Target='images'; Options=$opts }
-        $ops += [pscustomobject]@{ Name='sort'; Target='videos'; Options=$opts }
-    }
+
+    # 1. Cleanup first
     if ($controls.EnableCleanup.IsChecked) {
         $sz = 10
         [int]::TryParse($controls.CleanupMinSize.Text, [ref]$sz) | Out-Null
@@ -435,22 +514,177 @@ function Build-OperationList {
             MinSizeKB      = $sz
         }
     }
+
+    # 2. Consolidate
+    if ($controls.EnableMove.IsChecked) {
+        $imgs = Get-CheckedExtensions $imageExtCheckboxes
+        $vids = Get-CheckedExtensions $videoExtCheckboxes
+        $ops += [pscustomobject]@{
+            Name             = 'move'
+            DryRun           = [bool]$controls.MoveDryRun.IsChecked
+            ImageExtensions  = $imgs
+            VideoExtensions  = $vids
+        }
+    }
+
+    # 3. Sort
+    if ($controls.EnableSort.IsChecked) {
+        $opts = @{
+            DryRun          = [bool]$controls.SortDryRun.IsChecked
+            UseFileDateOnly = [bool]$controls.SortFileDateOnly.IsChecked
+        }
+        $ops += [pscustomobject]@{ Name='sort'; Target='images'; Options=$opts }
+        $ops += [pscustomobject]@{ Name='sort'; Target='videos'; Options=$opts }
+    }
+
     return ,$ops
 }
 
+# --- Log file management ----------------------------------------------------
+
+function Open-LogFile {
+    param([string]$Root, $Operations)
+
+    if (-not (Test-Path -LiteralPath $LogsDir)) {
+        New-Item -ItemType Directory -Path $LogsDir -Force | Out-Null
+    }
+
+    $stamp = (Get-Date).ToString('yyyy-MM-dd_HHmmss')
+    $script:state.LogPath = Join-Path $LogsDir "MediaTools-$stamp.txt"
+    $script:state.LogWriter = New-Object System.IO.StreamWriter $script:state.LogPath, $false, ([System.Text.Encoding]::UTF8)
+    $script:state.LogWriter.AutoFlush = $true
+
+    $w = $script:state.LogWriter
+    $w.WriteLine("============================================================")
+    $w.WriteLine("  Media Tools -- Run Log")
+    $w.WriteLine("============================================================")
+    $w.WriteLine("  Started:    $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
+    $w.WriteLine("  Folder:     $Root")
+    $w.WriteLine("  Logs path:  $($script:state.LogPath)")
+    $w.WriteLine("")
+    $w.WriteLine("  Operations:")
+    foreach ($op in $Operations) {
+        switch ($op.Name) {
+            'cleanup' {
+                $bits = @("MinSizeKB=$($op.MinSizeKB)")
+                if ($op.DryRun)         { $bits += 'DryRun' }
+                if ($op.Permanent)      { $bits += 'Permanent' }
+                if ($op.AggressiveSize) { $bits += 'AggressiveSize' }
+                $w.WriteLine("    - Cleanup junk             [$($bits -join ', ')]")
+            }
+            'move' {
+                $bits = @()
+                if ($op.DryRun) { $bits += 'DryRun' }
+                $bits += "$($op.ImageExtensions.Count) image types"
+                $bits += "$($op.VideoExtensions.Count) video types"
+                $w.WriteLine("    - Consolidate media        [$($bits -join ', ')]")
+                $w.WriteLine("        Images: $($op.ImageExtensions -join ' ')")
+                $w.WriteLine("        Videos: $($op.VideoExtensions -join ' ')")
+            }
+            'sort' {
+                $bits = @("target=$($op.Target)\")
+                if ($op.Options.DryRun)          { $bits += 'DryRun' }
+                if ($op.Options.UseFileDateOnly) { $bits += 'UseFileDateOnly' }
+                $w.WriteLine("    - Sort by year             [$($bits -join ', ')]")
+            }
+        }
+    }
+    $w.WriteLine("============================================================")
+    $w.WriteLine("")
+
+    # Display in UI
+    $controls.LogPathText.Text = "Log: $($script:state.LogPath)  (click to open)"
+}
+
+function Close-LogFile {
+    param([string]$ClosingNote = '')
+    if (-not $script:state.LogWriter) { return }
+    try {
+        if ($ClosingNote) { $script:state.LogWriter.WriteLine($ClosingNote) }
+        $script:state.LogWriter.Close()
+        $script:state.LogWriter.Dispose()
+    } catch {}
+    $script:state.LogWriter = $null
+}
+
+function Write-LogFooter {
+    param([bool]$Cancelled)
+    if (-not $script:state.LogWriter) { return }
+    $w = $script:state.LogWriter
+    $elapsed = (Get-Date) - $script:state.StartTime
+
+    $w.WriteLine("")
+    $w.WriteLine("============================================================")
+    $w.WriteLine("  Summary")
+    $w.WriteLine("============================================================")
+    $w.WriteLine("  Finished:  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
+    $w.WriteLine("  Duration:  $(Format-Duration $elapsed)")
+    if ($Cancelled) { $w.WriteLine("  Status:    CANCELLED") }
+    $w.WriteLine("")
+
+    foreach ($entry in $script:state.Summaries) {
+        $s  = $entry.Result
+        $op = $entry.Op
+        switch ($op.Name) {
+            'cleanup' {
+                $w.WriteLine("  Cleanup:")
+                $w.WriteLine(("    Junk files removed    : {0}" -f $s.JunkFileCount))
+                $w.WriteLine(("    Small files removed   : {0}" -f $s.SmallFileCount))
+                $w.WriteLine(("    Junk folders removed  : {0}" -f $s.JunkFolderCount))
+                $w.WriteLine(("    Empty folders removed : {0}" -f $s.EmptyFolderCount))
+                $w.WriteLine(("    Space reclaimed       : {0:N2} MB" -f ($s.BytesReclaimed / 1MB)))
+                if ($s.Failed -gt 0) { $w.WriteLine(("    Failures              : {0}" -f $s.Failed)) }
+                if ($s.DryRun)       { $w.WriteLine("    (Dry run -- nothing actually deleted.)") }
+                if ($s.Cancelled)    { $w.WriteLine("    (Cancelled.)") }
+            }
+            'move' {
+                $w.WriteLine("  Consolidate:")
+                $w.WriteLine(("    Images moved : {0}" -f $s.ImageCount))
+                $w.WriteLine(("    Videos moved : {0}" -f $s.VideoCount))
+                if ($s.Failed -gt 0) { $w.WriteLine(("    Failures     : {0}" -f $s.Failed)) }
+                if ($s.DryRun)       { $w.WriteLine("    (Dry run -- nothing actually moved.)") }
+                if ($s.Cancelled)    { $w.WriteLine("    (Cancelled.)") }
+            }
+            'sort' {
+                $w.WriteLine("  Sort by year [$($op.Target)\]:")
+                $w.WriteLine(("    Files moved : {0}" -f $s.Moved))
+                if ($s.Failed -gt 0) { $w.WriteLine(("    Failures    : {0}" -f $s.Failed)) }
+                if ($s.ByYear.Count -gt 0) {
+                    $w.WriteLine("    By year:")
+                    foreach ($k in ($s.ByYear.Keys | Sort-Object)) {
+                        $w.WriteLine(("      {0,-10} : {1}" -f $k, $s.ByYear[$k]))
+                    }
+                }
+                if ($s.DryRun)    { $w.WriteLine("    (Dry run -- nothing actually moved.)") }
+                if ($s.Cancelled) { $w.WriteLine("    (Cancelled.)") }
+            }
+        }
+        $w.WriteLine("")
+    }
+    $w.WriteLine("============================================================")
+}
+
 function Show-Summary {
+    param([bool]$Cancelled)
     $totalElapsed = (Get-Date) - $script:state.StartTime
-    $msg = "Completed in $(Format-Duration $totalElapsed).`n`n"
+    $title = if ($Cancelled) { "Cancelled after $(Format-Duration $totalElapsed)" } else { "Completed in $(Format-Duration $totalElapsed)" }
+    $msg = "$title.`n`n"
 
     foreach ($entry in $script:state.Summaries) {
         $s   = $entry.Result
         $op  = $entry.Op
         switch ($op.Name) {
+            'cleanup' {
+                $msg += ("Cleanup: {0} junk files, {1} small files, {2} junk folders, {3} empty folders -- {4:N1} MB reclaimed" -f
+                    $s.JunkFileCount, $s.SmallFileCount, $s.JunkFolderCount, $s.EmptyFolderCount, ($s.BytesReclaimed/1MB))
+                if ($s.Failed -gt 0) { $msg += "  ($($s.Failed) failed)" }
+                if ($s.DryRun)       { $msg += "  (dry run)" }
+                $msg += "`n"
+            }
             'move' {
                 $msg += "Consolidate: $($s.ImageCount) images, $($s.VideoCount) videos moved"
                 if ($s.Failed -gt 0) { $msg += "  ($($s.Failed) failed)" }
                 if ($s.DryRun)       { $msg += "  (dry run)" }
-                if ($s.Cancelled)    { $msg += "  (cancelled)" }
                 $msg += "`n"
             }
             'sort' {
@@ -458,19 +692,11 @@ function Show-Summary {
                 $msg += "Sort${tag}: $($s.Moved) files"
                 if ($s.Failed -gt 0) { $msg += "  ($($s.Failed) failed)" }
                 if ($s.DryRun)       { $msg += "  (dry run)" }
-                if ($s.Cancelled)    { $msg += "  (cancelled)" }
-                $msg += "`n"
-            }
-            'cleanup' {
-                $msg += ("Cleanup: {0} junk files, {1} small files, {2} junk folders, {3} empty folders -- {4:N1} MB reclaimed" -f
-                    $s.JunkFileCount, $s.SmallFileCount, $s.JunkFolderCount, $s.EmptyFolderCount, ($s.BytesReclaimed/1MB))
-                if ($s.Failed -gt 0) { $msg += "  ($($s.Failed) failed)" }
-                if ($s.DryRun)       { $msg += "  (dry run)" }
-                if ($s.Cancelled)    { $msg += "  (cancelled)" }
                 $msg += "`n"
             }
         }
     }
+    $msg += "`nLog saved to:`n$($script:state.LogPath)"
     [System.Windows.MessageBox]::Show($msg, "Media Tools", 'OK', 'Information') | Out-Null
 }
 
@@ -486,6 +712,14 @@ function Start-Work {
     $ops = Build-OperationList
     if ($ops.Count -eq 0) {
         [System.Windows.MessageBox]::Show("Please enable at least one operation.", "Media Tools", 'OK', 'Information') | Out-Null
+        return
+    }
+
+    # Check that consolidate has at least one extension if enabled
+    $moveOp = $ops | Where-Object { $_.Name -eq 'move' } | Select-Object -First 1
+    if ($moveOp -and (($moveOp.ImageExtensions.Count + $moveOp.VideoExtensions.Count) -eq 0)) {
+        [System.Windows.MessageBox]::Show("You enabled 'Consolidate media files' but didn't select any file types.",
+            "Media Tools", 'OK', 'Warning') | Out-Null
         return
     }
 
@@ -513,6 +747,16 @@ function Start-Work {
     $controls.CurrentFileText.Text = " "
     $controls.LogBox.Clear()
 
+    # Open log file
+    try {
+        Open-LogFile -Root $root -Operations $ops
+    } catch {
+        [System.Windows.MessageBox]::Show("Could not create log file: $($_.Exception.Message)`n`nRun will continue without logging.",
+            "Media Tools", 'OK', 'Warning') | Out-Null
+    }
+
+    Append-Log "Starting run."
+
     Set-Busy
 
     # Spin up a runspace
@@ -537,8 +781,17 @@ function Start-Work {
 
             try {
                 switch ($op.Name) {
+                    'cleanup' {
+                        $r = Invoke-CleanupJunk -Root $root -MinSizeKB $op.MinSizeKB `
+                                -DryRun:$op.DryRun -Permanent:$op.Permanent `
+                                -AggressiveSize:$op.AggressiveSize `
+                                -OnProgress $cb -CancelToken $cancelToken
+                        $queue.Enqueue(@{ Type='op-done'; Op=$op; Result=$r })
+                    }
                     'move' {
                         $r = Invoke-MoveMedia -Root $root -DryRun:$op.DryRun `
+                                              -ImageExtensions $op.ImageExtensions `
+                                              -VideoExtensions $op.VideoExtensions `
                                               -OnProgress $cb -CancelToken $cancelToken
                         $queue.Enqueue(@{ Type='op-done'; Op=$op; Result=$r })
                     }
@@ -554,13 +807,6 @@ function Start-Work {
                             $queue.Enqueue(@{ Type='log'; Level='warn';
                                 Message="Skipping sort: '$target' does not exist." })
                         }
-                    }
-                    'cleanup' {
-                        $r = Invoke-CleanupJunk -Root $root -MinSizeKB $op.MinSizeKB `
-                                -DryRun:$op.DryRun -Permanent:$op.Permanent `
-                                -AggressiveSize:$op.AggressiveSize `
-                                -OnProgress $cb -CancelToken $cancelToken
-                        $queue.Enqueue(@{ Type='op-done'; Op=$op; Result=$r })
                     }
                 }
             } catch {
@@ -581,19 +827,21 @@ function Start-Work {
 $timer = New-Object System.Windows.Threading.DispatcherTimer
 $timer.Interval = [TimeSpan]::FromMilliseconds(100)
 $timer.Add_Tick({
-    # Update elapsed clock
     if ($script:state.Running -and $script:state.StartTime) {
         $controls.ElapsedText.Text = "Elapsed: $(Format-Duration ((Get-Date) - $script:state.StartTime))"
     }
 
+    $maxPerTick = 500  # cap event processing per tick so UI stays responsive
+    $processed = 0
     $evt = $null
-    while ($script:state.Queue.TryDequeue([ref]$evt)) {
+    while ($processed -lt $maxPerTick -and $script:state.Queue.TryDequeue([ref]$evt)) {
+        $processed++
         switch ($evt.Type) {
             'phase' {
                 $phaseName = switch ($evt.Phase) {
+                    'cleanup' { 'Cleaning up junk' }
                     'move'    { 'Consolidating media files' }
                     'sort'    { 'Sorting by year' }
-                    'cleanup' { 'Cleaning up junk' }
                     default   { $evt.Phase }
                 }
                 $controls.StatusText.Text = "$phaseName..."
@@ -607,6 +855,7 @@ $timer.Add_Tick({
             'scan-done' {
                 $controls.StatusText.Text = "$($controls.StatusText.Text.TrimEnd('.')) ($($evt.Total.ToString('N0')) items)"
                 $script:state.LastTotal = $evt.Total
+                Append-Log "Pre-scan found $($evt.Total) items."
                 if ($evt.Total -eq 0) {
                     Append-Log "Nothing to process for this phase."
                 }
@@ -627,29 +876,33 @@ $timer.Add_Tick({
                 $script:state.Summaries += @{ Op=$evt.Op; Result=$evt.Result }
             }
             'phase-done' {
-                # Phase complete; the per-op summary arrived via op-done.
+                # The per-op summary already arrived via op-done.
             }
             'all-done' {
                 $script:state.Running = $false
                 $controls.ProgressBar.Value = 100
-                $totalElapsed = (Get-Date) - $script:state.StartTime
                 $cancelled = ($script:state.Summaries | Where-Object { $_.Result.Cancelled }).Count -gt 0
+                $totalElapsed = (Get-Date) - $script:state.StartTime
                 $controls.StatusText.Text = if ($cancelled) {
                     "Cancelled after $(Format-Duration $totalElapsed)"
                 } else {
                     "Done in $(Format-Duration $totalElapsed)"
                 }
                 $controls.CurrentFileText.Text = " "
+
+                Append-Log "Run finished."
+                Write-LogFooter -Cancelled $cancelled
+                Close-LogFile
+
                 Set-Idle
 
-                # Clean up the worker
                 try { $script:state.PowerShell.EndInvoke($script:state.AsyncResult) } catch {}
                 try { $script:state.PowerShell.Dispose() } catch {}
                 try { $script:state.Runspace.Dispose() } catch {}
                 $script:state.PowerShell = $null
                 $script:state.Runspace   = $null
 
-                Show-Summary
+                Show-Summary -Cancelled $cancelled
             }
         }
     }
@@ -675,13 +928,21 @@ $controls.CancelButton.Add_Click({
     $script:state.CancelToken.Requested = $true
     $controls.CancelButton.IsEnabled = $false
     $controls.StatusText.Text = "Cancelling..."
+    Append-Log "Cancellation requested by user." 'warn'
+})
+
+$controls.LogPathText.Add_MouseLeftButtonDown({
+    if ($script:state.LogPath -and (Test-Path -LiteralPath $script:state.LogPath)) {
+        try { Start-Process $script:state.LogPath } catch {}
+    } elseif (Test-Path -LiteralPath $LogsDir) {
+        try { Start-Process $LogsDir } catch {}
+    }
 })
 
 $window.Add_Closing({
     param($sender, $args)
     if ($script:state.Running) {
         $script:state.CancelToken.Requested = $true
-        # Give the worker a moment to notice cancellation
         if ($script:state.PowerShell) {
             try { $script:state.PowerShell.Stop() } catch {}
             try { $script:state.PowerShell.Dispose() } catch {}
@@ -689,6 +950,9 @@ $window.Add_Closing({
         if ($script:state.Runspace) {
             try { $script:state.Runspace.Dispose() } catch {}
         }
+        Close-LogFile -ClosingNote "`r`n[Window closed mid-run]"
+    } else {
+        Close-LogFile
     }
     $timer.Stop()
 })
