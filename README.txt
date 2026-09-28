@@ -11,12 +11,12 @@ as individual command-line scripts:
   2. Consolidate -- move every image and video from nested
                     subfolders into top-level images\ and videos\
   3. Sort by year -- organize files in images\ and videos\
-                    into 2015\, 2016\, ... using EXIF /
-                    media-creation metadata
+                    into 2015\, 2016\, ... using metadata
 
 The GUI runs them in that order (cleaning out junk first so
 it doesn't get moved or sorted). Each run produces a
 structured log file in .\Logs\.
+
 
 ------------------------------------------------------------
   FILES IN THIS FOLDER
@@ -28,14 +28,19 @@ structured log file in .\Logs\.
 
   Run-MediaTools.ps1      The GUI launcher. Single window with
                           folder picker, three operation cards
-                          with options (including per-extension
-                          file-type checkboxes for consolidate),
-                          progress bar, ETA, live log,
-                          and Cancel button.
+                          with options (including an
+                          expandable Include/Exclude filter
+                          for the Consolidate step), progress
+                          bar, ETA, live log, and Cancel
+                          button.
 
   Move-MediaFiles.ps1     CLI wrappers for each operation.
   Sort-MediaByYear.ps1    Each one imports the module and
   Cleanup-Junk.ps1        adds a console progress display.
+
+  Build-Exe.ps1           Optional: compiles the GUI into
+                          a self-contained MediaTools.exe
+                          via the ps2exe module.
 
   Logs\                   Created automatically. One .txt
                           per GUI run, timestamped.
@@ -57,15 +62,14 @@ GUI each look for MediaTools.psm1 next to themselves.
      (If Windows asks, allow it.)
   3. In the GUI:
         - Click Browse... and pick your target folder
-          (e.g. D:\Lena Photo Library Mac).
+          (e.g. D:\Photos).
         - All three operations are enabled by default.
           Untick any you want to skip.
-        - For Consolidate, all file-type checkboxes are
-          ticked by default. Untick any extensions you do
-          NOT want moved -- e.g. uncheck .heic if you'd
-          rather leave iPhone HEICs in place. Use the
-          "all" / "none" buttons next to each group for
-          quick selection.
+        - For Consolidate, every known media format is
+          included by default. To narrow the set, expand
+          "Customize file types" and use the Include /
+          Exclude boxes (see "GUI DETAILS" below for
+          syntax).
         - For a first run, tick "Dry run" on each operation
           to preview without changing anything.
         - Click Run.
@@ -73,7 +77,9 @@ GUI each look for MediaTools.psm1 next to themselves.
      work cleanly between files at any point.
   5. A summary dialog appears when the run finishes, and
      the log file path is shown at the bottom of the window
-     (click it to open the log).
+     (click it to open the log). The "Open Logs folder"
+     link next to it opens the folder containing all past
+     run logs.
 
 
 ------------------------------------------------------------
@@ -87,10 +93,10 @@ Cleanup goes first so:
     don't clutter what consolidate sees.
 
 Consolidate goes second so:
-  - Everything matching your selected extensions ends up
-    in images\ and videos\.
-  - Anything you UNticked in the file-type list stays in
-    place untouched.
+  - Everything matching the active extension filter ends
+    up in images\ and videos\.
+  - Anything filtered out (via the Exclude list, or simply
+    not on the Include list) stays in place untouched.
 
 Sort by year goes last so:
   - It only has to look at images\ and videos\ -- the two
@@ -130,7 +136,7 @@ If PowerShell refuses to run scripts:
 The CLI scripts use the full default extension lists. To
 limit which file types are moved by Move-MediaFiles.ps1 from
 the command line, edit the lists at the top of
-MediaTools.psm1, or use the GUI for per-extension control.
+MediaTools.psm1, or use the GUI for include/exclude control.
 
 
 ------------------------------------------------------------
@@ -149,11 +155,40 @@ Three operation cards, top to bottom in execution order:
       dialog before starting.
 
   Card 2 -- Consolidate media files
-      Options: Dry run, plus a checkbox grid for every
-      image and video extension.
-      The "all" / "none" buttons next to each group toggle
-      every extension in that group at once. A run with
-      zero extensions selected is blocked with a warning.
+      Options: Dry run, plus a "Customize file types"
+      expander.
+      By default the full list of supported image and video
+      extensions is used. To narrow the set, expand
+      "Customize file types" to reveal two text fields:
+
+        Include only:   limit consolidate to just these
+                        types. Leave blank to use every
+                        default type.
+        Exclude:        remove these from whatever set is
+                        being used.
+
+      The fields accept extensions in a forgiving format:
+      with or without leading dots, separated by commas,
+      semicolons, or whitespace. All of the following
+      mean the same thing:
+
+          jpg, png, mov
+          .jpg .png .mov
+          jpg;png;mov
+
+      Common patterns:
+
+        - Defaults only:        leave both fields blank.
+        - Only specific types:  put them in Include.
+          Example -- only photos, no videos:
+              Include only:  jpg, jpeg, png, heic, raw
+        - Most types, minus a few:  use Exclude only.
+          Example -- skip iPhone HEICs and big RAW files:
+              Exclude:  heic, raw, cr2, nef, arw, dng
+
+      A run with no resulting extensions (e.g. Include
+      lists something the script doesn't recognize) is
+      blocked with a warning.
 
   Card 3 -- Sort by year
       Options: Dry run, Use file dates only.
@@ -165,8 +200,9 @@ The progress card shows the current phase, percentage,
 current / total counter, smoothed ETA, and the file currently
 being processed. The "Show log" expander reveals a live
 console-style log of operations. The clickable text below
-the log expander shows the log file path -- click it to open
-the log in your default editor.
+shows the log file path -- click it to open the log in your
+default editor. "Open Logs folder" next to it opens the
+folder containing every past run's log file.
 
 
 ------------------------------------------------------------
@@ -181,12 +217,13 @@ The log includes:
 
   - A header block with the run start time, target folder,
     and every enabled operation with its options.
-  - For consolidate, the exact list of image and video
-    extensions used.
+  - For consolidate, the active filter description (whether
+    defaults were used, plus any Include/Exclude values)
+    and the resulting image and video extension lists.
   - A timestamped entry for every action the run takes:
-        Moved: D:\...\IMG_0001.jpg -> D:\...\images\IMG_0001.jpg
-        Sorted: IMG_0001.jpg -> 2017\ (metadata)
-        Removed (junk-name, 6,148 B): D:\...\.DS_Store
+        Moved:    C:\src\photo.jpg -> D:\Photos\images\photo.jpg
+        Sorted:   IMG_0001.jpg -> 2017\ (metadata)
+        Removed (junk-name, 6,148 B): D:\Photos\.DS_Store
   - Any warnings or failures.
   - A footer block with the run duration and per-operation
     summaries (counts, by-year breakdown for sort, MB
@@ -301,6 +338,47 @@ Default delete target is the Recycle Bin. Use -Permanent
 
 
 ------------------------------------------------------------
+  BUILDING A STANDALONE .EXE (OPTIONAL)
+------------------------------------------------------------
+
+If you'd rather have a clickable MediaTools.exe instead of
+running the .ps1 each time:
+
+  1. One-time setup. In PowerShell, run:
+
+         Install-Module -Name ps2exe -Scope CurrentUser
+
+  2. From this folder, run:
+
+         .\Build-Exe.ps1
+
+  3. MediaTools.exe appears next to the script. Drop it
+     anywhere -- it's self-contained. Logs are created in
+     a Logs\ folder next to the .exe at runtime.
+
+Optional flags:
+
+    .\Build-Exe.ps1 -IconFile .\my-icon.ico
+    .\Build-Exe.ps1 -OutputName "Photo Sorter.exe"
+    .\Build-Exe.ps1 -Console        # keep console window
+    .\Build-Exe.ps1 -KeepTempScript # preserve the combined .ps1
+
+The .exe is a ps2exe-wrapped PowerShell script. Antivirus
+software may flag it on first run (because the technique
+is also used by malware); you can usually allow it through
+Windows Defender. PowerShell itself is required on the
+target machine, which is built in on every modern Windows.
+
+
+------------------------------------------------------------
+  LICENSE
+------------------------------------------------------------
+
+This project is licensed under the GNU General Public License
+version 3. See the LICENSE file for the complete license text.
+
+
+------------------------------------------------------------
   SAFETY TIPS
 ------------------------------------------------------------
 
@@ -329,12 +407,13 @@ Default delete target is the Recycle Bin. Use -Permanent
 
 "MediaTools.psm1 was not found"
     The wrapper scripts and the GUI need the module in the
-    same folder as themselves. Make sure all four files
+    same folder as themselves. Make sure all the files
     live side by side.
 
 GUI opens, then closes immediately
-    Likely a syntax/runtime error. Run from PowerShell instead
-    of double-clicking so you can see the error message:
+    Likely a syntax/runtime error. Run from PowerShell
+    instead of double-clicking so you can see the error
+    message:
         .\Run-MediaTools.ps1
 
 Years look completely wrong for many files
@@ -358,9 +437,13 @@ Cancel doesn't stop the operation immediately
     files. A long-running file operation may take a moment
     to wrap up.
 
-I clicked Run but nothing happens / a checkbox warning shows
-    Make sure at least one operation is ticked, and that
-    Consolidate has at least one file extension selected.
+"Consolidate is enabled but the Include/Exclude filters
+leave no file types"
+    Either you typed something the script doesn't recognize
+    in the Include box (the recognized extensions are
+    listed earlier in this file), or your Exclude list
+    removed everything Include allowed. Clear both fields
+    to fall back to the defaults.
 
 The log file is too big to open
     Each run produces a separate file in .\Logs\, so logs

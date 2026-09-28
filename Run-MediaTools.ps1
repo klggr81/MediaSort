@@ -41,7 +41,7 @@ $LogsDir = Join-Path $ScriptDir 'Logs'
 [xml]$xaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Media Tools" Height="820" Width="860"
+        Title="Media Tools" Height="720" Width="820"
         WindowStartupLocation="CenterScreen"
         Background="#F3F3F3"
         FontFamily="Segoe UI Variable, Segoe UI" FontSize="14"
@@ -80,11 +80,6 @@ $LogsDir = Join-Path $ScriptDir 'Logs'
           </ControlTemplate>
         </Setter.Value>
       </Setter>
-    </Style>
-
-    <Style TargetType="Button" x:Key="MiniButton" BasedOn="{StaticResource {x:Type Button}}">
-      <Setter Property="Padding" Value="8,2"/>
-      <Setter Property="FontSize" Value="11"/>
     </Style>
 
     <Style TargetType="Button" x:Key="AccentButton" BasedOn="{StaticResource {x:Type Button}}">
@@ -182,10 +177,16 @@ $LogsDir = Join-Path $ScriptDir 'Logs'
       <Setter Property="TextWrapping" Value="Wrap"/>
     </Style>
 
-    <Style x:Key="SubHeader" TargetType="TextBlock">
+    <Style x:Key="FieldLabel" TargetType="TextBlock">
       <Setter Property="FontWeight" Value="SemiBold"/>
       <Setter Property="Foreground" Value="#444444"/>
-      <Setter Property="Margin" Value="0,8,8,4"/>
+      <Setter Property="Margin" Value="0,0,0,3"/>
+    </Style>
+
+    <Style x:Key="HintText" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="#888888"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="Margin" Value="0,3,0,10"/>
     </Style>
 
   </Window.Resources>
@@ -244,7 +245,7 @@ $LogsDir = Join-Path $ScriptDir 'Logs'
             </StackPanel>
             <StackPanel Orientation="Horizontal" Margin="28,6,0,0">
               <TextBlock Text="Minimum file size:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-              <TextBox x:Name="CleanupMinSize" Text="10" Width="48"/>
+              <TextBox x:Name="CleanupMinSize" Text="10" Width="72"/>
               <TextBlock Text="KB" VerticalAlignment="Center" Margin="8,0,0,0"/>
             </StackPanel>
           </StackPanel>
@@ -257,25 +258,31 @@ $LogsDir = Join-Path $ScriptDir 'Logs'
               <TextBlock Style="{StaticResource OpHeader}" Text="2. Consolidate media files"/>
             </CheckBox>
             <TextBlock Style="{StaticResource OpHint}">
-              Recursively gathers images into <Run FontWeight="SemiBold">images\</Run> and videos into <Run FontWeight="SemiBold">videos\</Run>. Pick which file types to include below.
+              Recursively gathers images into <Run FontWeight="SemiBold">images\</Run> and videos into <Run FontWeight="SemiBold">videos\</Run>. By default all known media types are included.
             </TextBlock>
             <StackPanel Orientation="Horizontal" Margin="28,0,0,4">
               <CheckBox x:Name="MoveDryRun" Content="Dry run (preview only)"/>
             </StackPanel>
 
-            <StackPanel Orientation="Horizontal" Margin="28,8,0,0">
-              <TextBlock Style="{StaticResource SubHeader}" Text="Images" VerticalAlignment="Center"/>
-              <Button x:Name="ImageAllBtn" Style="{StaticResource MiniButton}" Content="all" Margin="4,4,2,0"/>
-              <Button x:Name="ImageNoneBtn" Style="{StaticResource MiniButton}" Content="none" Margin="0,4,0,0"/>
-            </StackPanel>
-            <WrapPanel x:Name="ImageExtPanel" Margin="28,2,0,0"/>
+            <Expander x:Name="FileTypesExpander" Margin="28,10,0,0"
+                      Header="Customize file types" Foreground="#0078D4">
+              <Border Background="#FAFAFA" BorderBrush="#E5E5E5" BorderThickness="1"
+                      CornerRadius="4" Padding="12" Margin="0,8,0,0">
+                <StackPanel>
+                  <TextBlock Style="{StaticResource FieldLabel}" Text="Include only:"/>
+                  <TextBox x:Name="IncludeBox"/>
+                  <TextBlock Style="{StaticResource HintText}">
+                    Comma- or space-separated. Leave blank to use every default type. Example: <Run FontFamily="Consolas">jpg, png, mov</Run>
+                  </TextBlock>
 
-            <StackPanel Orientation="Horizontal" Margin="28,8,0,0">
-              <TextBlock Style="{StaticResource SubHeader}" Text="Videos" VerticalAlignment="Center"/>
-              <Button x:Name="VideoAllBtn" Style="{StaticResource MiniButton}" Content="all" Margin="4,4,2,0"/>
-              <Button x:Name="VideoNoneBtn" Style="{StaticResource MiniButton}" Content="none" Margin="0,4,0,0"/>
-            </StackPanel>
-            <WrapPanel x:Name="VideoExtPanel" Margin="28,2,0,0"/>
+                  <TextBlock Style="{StaticResource FieldLabel}" Text="Exclude:"/>
+                  <TextBox x:Name="ExcludeBox"/>
+                  <TextBlock Style="{StaticResource HintText}" Margin="0,3,0,0">
+                    Same syntax. Useful for skipping a few formats while keeping the rest. Example: <Run FontFamily="Consolas">heic, raw, mkv</Run>
+                  </TextBlock>
+                </StackPanel>
+              </Border>
+            </Expander>
           </StackPanel>
         </Border>
 
@@ -286,7 +293,7 @@ $LogsDir = Join-Path $ScriptDir 'Logs'
               <TextBlock Style="{StaticResource OpHeader}" Text="3. Sort by year"/>
             </CheckBox>
             <TextBlock Style="{StaticResource OpHint}">
-              Sorts files in <Run FontWeight="SemiBold">images\</Run> and <Run FontWeight="SemiBold">videos\</Run> into year subfolders (2015\, 2016\, ...) using EXIF / media metadata when available.
+              Sorts files in <Run FontWeight="SemiBold">images\</Run> and <Run FontWeight="SemiBold">videos\</Run> into year subfolders using metadata when available.
             </TextBlock>
             <StackPanel Orientation="Horizontal" Margin="28,0,0,0">
               <CheckBox x:Name="SortDryRun" Content="Dry run" Margin="0,0,18,0"/>
@@ -327,11 +334,21 @@ $LogsDir = Join-Path $ScriptDir 'Logs'
       </Border>
     </Expander>
 
-    <!-- Log file path -->
-    <TextBlock Grid.Row="5" x:Name="LogPathText" Margin="0,10,0,0"
-               Foreground="#0078D4" TextDecorations="Underline" Cursor="Hand"
-               TextTrimming="CharacterEllipsis"
-               Text="Log file will be created in .\Logs\ when you click Run."/>
+    <!-- Log path row -->
+    <Grid Grid.Row="5" Margin="0,10,0,0">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
+      <TextBlock Grid.Column="0" x:Name="LogPathText"
+                 Foreground="#0078D4" TextDecorations="Underline" Cursor="Hand"
+                 TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                 Text="Log file will be created in .\Logs\ when you click Run."/>
+      <TextBlock Grid.Column="1" x:Name="OpenLogsFolderText"
+                 Foreground="#0078D4" TextDecorations="Underline" Cursor="Hand"
+                 VerticalAlignment="Center" Margin="16,0,0,0"
+                 Text="Open Logs folder"/>
+    </Grid>
 
     <!-- Action buttons -->
     <Grid Grid.Row="6" Margin="0,12,0,0">
@@ -359,45 +376,20 @@ $window = [Windows.Markup.XamlReader]::Load($reader)
 $controls = @{}
 @('FolderTextBox','BrowseButton',
   'EnableCleanup','CleanupDryRun','CleanupPermanent','CleanupAggressive','CleanupMinSize',
-  'EnableMove','MoveDryRun','ImageExtPanel','VideoExtPanel',
-  'ImageAllBtn','ImageNoneBtn','VideoAllBtn','VideoNoneBtn',
+  'EnableMove','MoveDryRun','FileTypesExpander','IncludeBox','ExcludeBox',
   'EnableSort','SortDryRun','SortFileDateOnly',
   'StatusText','StatsText','ProgressBar','CurrentFileText',
-  'LogExpander','LogBox','LogScroller','LogPathText',
+  'LogExpander','LogBox','LogScroller','LogPathText','OpenLogsFolderText',
   'ElapsedText','CancelButton','RunButton') | ForEach-Object {
     $controls[$_] = $window.FindName($_)
 }
 
 $controls.FolderTextBox.Text = $ScriptDir
 
-# --- Populate extension checkboxes -----------------------------------------
+# --- Defaults for the consolidate extension fields -------------------------
 
-$imageExtCheckboxes = @()
-$videoExtCheckboxes = @()
-
-foreach ($ext in (Get-MediaImageExtensions)) {
-    $cb = New-Object System.Windows.Controls.CheckBox
-    $cb.Content = $ext
-    $cb.IsChecked = $true
-    $cb.Margin = '0,2,14,2'
-    $cb.Tag = $ext
-    [void]$controls.ImageExtPanel.Children.Add($cb)
-    $imageExtCheckboxes += $cb
-}
-foreach ($ext in (Get-MediaVideoExtensions)) {
-    $cb = New-Object System.Windows.Controls.CheckBox
-    $cb.Content = $ext
-    $cb.IsChecked = $true
-    $cb.Margin = '0,2,14,2'
-    $cb.Tag = $ext
-    [void]$controls.VideoExtPanel.Children.Add($cb)
-    $videoExtCheckboxes += $cb
-}
-
-$controls.ImageAllBtn.Add_Click({ foreach ($cb in $imageExtCheckboxes) { $cb.IsChecked = $true } })
-$controls.ImageNoneBtn.Add_Click({ foreach ($cb in $imageExtCheckboxes) { $cb.IsChecked = $false } })
-$controls.VideoAllBtn.Add_Click({ foreach ($cb in $videoExtCheckboxes) { $cb.IsChecked = $true } })
-$controls.VideoNoneBtn.Add_Click({ foreach ($cb in $videoExtCheckboxes) { $cb.IsChecked = $false } })
+$DefaultImageExt = Get-MediaImageExtensions
+$DefaultVideoExt = Get-MediaVideoExtensions
 
 # --- Shared state -----------------------------------------------------------
 
@@ -428,6 +420,21 @@ function Format-Duration {
     return ("{0}h {1:D2}m" -f [int]$ts.TotalHours, $ts.Minutes)
 }
 
+function Parse-ExtensionList {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
+    # Accept comma, semicolon, or whitespace as separators
+    $tokens = $Text -split '[,;\s]+' | Where-Object { $_ }
+    $result = foreach ($t in $tokens) {
+        $e = $t.ToLower().Trim()
+        # Strip any leading wildcard
+        if ($e.StartsWith('*')) { $e = $e.Substring(1) }
+        if (-not $e.StartsWith('.')) { $e = '.' + $e }
+        $e
+    }
+    return @($result | Sort-Object -Unique)
+}
+
 function Write-LogLine {
     param([string]$Text)
     if ($script:state.LogWriter) {
@@ -454,12 +461,10 @@ function Set-Idle {
     $controls.FolderTextBox.IsEnabled = $true
     $controls.BrowseButton.IsEnabled  = $true
     foreach ($n in 'EnableCleanup','CleanupDryRun','CleanupPermanent','CleanupAggressive','CleanupMinSize',
-                   'EnableMove','MoveDryRun',
-                   'EnableSort','SortDryRun','SortFileDateOnly',
-                   'ImageAllBtn','ImageNoneBtn','VideoAllBtn','VideoNoneBtn') {
+                   'EnableMove','MoveDryRun','FileTypesExpander','IncludeBox','ExcludeBox',
+                   'EnableSort','SortDryRun','SortFileDateOnly') {
         $controls[$n].IsEnabled = $true
     }
-    foreach ($cb in $imageExtCheckboxes + $videoExtCheckboxes) { $cb.IsEnabled = $true }
 }
 
 function Set-Busy {
@@ -468,12 +473,10 @@ function Set-Busy {
     $controls.FolderTextBox.IsEnabled = $false
     $controls.BrowseButton.IsEnabled  = $false
     foreach ($n in 'EnableCleanup','CleanupDryRun','CleanupPermanent','CleanupAggressive','CleanupMinSize',
-                   'EnableMove','MoveDryRun',
-                   'EnableSort','SortDryRun','SortFileDateOnly',
-                   'ImageAllBtn','ImageNoneBtn','VideoAllBtn','VideoNoneBtn') {
+                   'EnableMove','MoveDryRun','FileTypesExpander','IncludeBox','ExcludeBox',
+                   'EnableSort','SortDryRun','SortFileDateOnly') {
         $controls[$n].IsEnabled = $false
     }
-    foreach ($cb in $imageExtCheckboxes + $videoExtCheckboxes) { $cb.IsEnabled = $false }
 }
 
 function Update-ETA {
@@ -494,9 +497,31 @@ function Update-ETA {
     return $null
 }
 
-function Get-CheckedExtensions {
-    param($Checkboxes)
-    return @($Checkboxes | Where-Object { $_.IsChecked } | ForEach-Object { $_.Tag })
+function Resolve-ConsolidateExtensions {
+    # Returns @{ Images = @(...); Videos = @(...); Description = '...' }
+    $includeRaw = Parse-ExtensionList $controls.IncludeBox.Text
+    $excludeRaw = Parse-ExtensionList $controls.ExcludeBox.Text
+
+    if ($includeRaw.Count -gt 0) {
+        # Whitelist mode: intersect with default categorization
+        $imgs = @($DefaultImageExt | Where-Object { $includeRaw -contains $_ })
+        $vids = @($DefaultVideoExt | Where-Object { $includeRaw -contains $_ })
+        $unknown = @($includeRaw | Where-Object { $DefaultImageExt -notcontains $_ -and $DefaultVideoExt -notcontains $_ })
+        $desc = "Include list: $($includeRaw -join ' ')"
+        if ($unknown.Count -gt 0) { $desc += "    (ignored unknown: $($unknown -join ' '))" }
+    } else {
+        $imgs = $DefaultImageExt
+        $vids = $DefaultVideoExt
+        $desc = "Defaults"
+    }
+
+    if ($excludeRaw.Count -gt 0) {
+        $imgs = @($imgs | Where-Object { $excludeRaw -notcontains $_ })
+        $vids = @($vids | Where-Object { $excludeRaw -notcontains $_ })
+        $desc += "  /  Excluded: $($excludeRaw -join ' ')"
+    }
+
+    return @{ Images = $imgs; Videos = $vids; Description = $desc }
 }
 
 function Build-OperationList {
@@ -517,13 +542,13 @@ function Build-OperationList {
 
     # 2. Consolidate
     if ($controls.EnableMove.IsChecked) {
-        $imgs = Get-CheckedExtensions $imageExtCheckboxes
-        $vids = Get-CheckedExtensions $videoExtCheckboxes
+        $resolved = Resolve-ConsolidateExtensions
         $ops += [pscustomobject]@{
             Name             = 'move'
             DryRun           = [bool]$controls.MoveDryRun.IsChecked
-            ImageExtensions  = $imgs
-            VideoExtensions  = $vids
+            ImageExtensions  = $resolved.Images
+            VideoExtensions  = $resolved.Videos
+            Description      = $resolved.Description
         }
     }
 
@@ -578,6 +603,7 @@ function Open-LogFile {
                 $bits += "$($op.ImageExtensions.Count) image types"
                 $bits += "$($op.VideoExtensions.Count) video types"
                 $w.WriteLine("    - Consolidate media        [$($bits -join ', ')]")
+                $w.WriteLine("        Filter: $($op.Description)")
                 $w.WriteLine("        Images: $($op.ImageExtensions -join ' ')")
                 $w.WriteLine("        Videos: $($op.VideoExtensions -join ' ')")
             }
@@ -592,7 +618,6 @@ function Open-LogFile {
     $w.WriteLine("============================================================")
     $w.WriteLine("")
 
-    # Display in UI
     $controls.LogPathText.Text = "Log: $($script:state.LogPath)  (click to open)"
 }
 
@@ -715,15 +740,16 @@ function Start-Work {
         return
     }
 
-    # Check that consolidate has at least one extension if enabled
+    # Make sure consolidate has at least one extension
     $moveOp = $ops | Where-Object { $_.Name -eq 'move' } | Select-Object -First 1
     if ($moveOp -and (($moveOp.ImageExtensions.Count + $moveOp.VideoExtensions.Count) -eq 0)) {
-        [System.Windows.MessageBox]::Show("You enabled 'Consolidate media files' but didn't select any file types.",
+        [System.Windows.MessageBox]::Show(
+            "Consolidate is enabled but the Include/Exclude filters leave no file types.`nClear both fields to use the defaults.",
             "Media Tools", 'OK', 'Warning') | Out-Null
         return
     }
 
-    # Warn before permanent cleanup that isn't a dry run
+    # Confirm before permanent delete
     $cleanupOp = $ops | Where-Object { $_.Name -eq 'cleanup' } | Select-Object -First 1
     if ($cleanupOp -and $cleanupOp.Permanent -and -not $cleanupOp.DryRun) {
         $confirm = [System.Windows.MessageBox]::Show(
@@ -747,7 +773,6 @@ function Start-Work {
     $controls.CurrentFileText.Text = " "
     $controls.LogBox.Clear()
 
-    # Open log file
     try {
         Open-LogFile -Root $root -Operations $ops
     } catch {
@@ -759,7 +784,6 @@ function Start-Work {
 
     Set-Busy
 
-    # Spin up a runspace
     $rs = [runspacefactory]::CreateRunspace()
     $rs.ApartmentState = 'STA'
     $rs.ThreadOptions  = 'ReuseThread'
@@ -831,7 +855,7 @@ $timer.Add_Tick({
         $controls.ElapsedText.Text = "Elapsed: $(Format-Duration ((Get-Date) - $script:state.StartTime))"
     }
 
-    $maxPerTick = 500  # cap event processing per tick so UI stays responsive
+    $maxPerTick = 500
     $processed = 0
     $evt = $null
     while ($processed -lt $maxPerTick -and $script:state.Queue.TryDequeue([ref]$evt)) {
@@ -876,7 +900,7 @@ $timer.Add_Tick({
                 $script:state.Summaries += @{ Op=$evt.Op; Result=$evt.Result }
             }
             'phase-done' {
-                # The per-op summary already arrived via op-done.
+                # Per-op summary already arrived via op-done.
             }
             'all-done' {
                 $script:state.Running = $false
@@ -937,6 +961,13 @@ $controls.LogPathText.Add_MouseLeftButtonDown({
     } elseif (Test-Path -LiteralPath $LogsDir) {
         try { Start-Process $LogsDir } catch {}
     }
+})
+
+$controls.OpenLogsFolderText.Add_MouseLeftButtonDown({
+    if (-not (Test-Path -LiteralPath $LogsDir)) {
+        New-Item -ItemType Directory -Path $LogsDir -Force | Out-Null
+    }
+    try { Start-Process $LogsDir } catch {}
 })
 
 $window.Add_Closing({
