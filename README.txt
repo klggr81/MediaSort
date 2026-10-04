@@ -19,6 +19,35 @@ structured log file in .\Logs\.
 
 
 ------------------------------------------------------------
+  WHAT'S NEW IN 0.3.0
+------------------------------------------------------------
+
+  - Output location: send results into the source folder
+    (as before) or into any other folder or drive.
+  - File transfer: Move files (as before) or Copy them,
+    leaving the originals untouched. Copies keep the
+    original file dates, so Sort by year still works.
+    Before copying (or moving to another drive), the free
+    space on the destination drive is checked.
+  - Folder layout: keep images\ and videos\ separate (as
+    before), or put everything together in one media\
+    folder.
+  - run.bat: double-click to start the GUI in PowerShell as
+    Administrator.
+  - Duplicates: scan for files with identical content, list
+    them in Logs\Duplicates-*.txt, and optionally remove the
+    extra copies (Copy: not copied; Move: Recycle Bin).
+  - Keep folder name: optionally keep each file's original
+    folder name under the year folder
+    (images\2019\Holiday\IMG_01.jpg).
+  - Transfer log: every move/copy run writes a structured
+    Logs\Transfers-*.txt listing each file, where it came
+    from and where it went (see LOG FILES).
+  - The interface always runs in English, regardless of the
+    Windows display language.
+
+
+------------------------------------------------------------
   FILES IN THIS FOLDER
 ------------------------------------------------------------
 
@@ -26,8 +55,14 @@ structured log file in .\Logs\.
                           lives here. Required by every other
                           script.
 
-  Run-MediaTools.ps1      The GUI launcher. Single window with
-                          folder picker, three operation cards
+  run.bat                 Double-click launcher. Starts
+                          Run-MediaTools.ps1 in PowerShell as
+                          Administrator (UAC prompt).
+
+  Run-MediaTools.ps1      The GUI. Single window with source
+                          folder picker, output options
+                          (location, move/copy, layout),
+                          three operation cards
                           with options (including an
                           expandable Include/Exclude filter
                           for the Consolidate step), progress
@@ -47,6 +82,13 @@ structured log file in .\Logs\.
 
   README.txt              This file.
 
+  MediaTools.psd1         Module manifest. Holds the version
+                          number (ModuleVersion) used by the
+                          GUI title and all logs.
+
+  CHANGELOG.md            Version history (Keep a Changelog
+                          format, Semantic Versioning).
+
 Keep all of the scripts in the same folder. The wrappers and
 GUI each look for MediaTools.psm1 next to themselves.
 
@@ -55,14 +97,19 @@ GUI each look for MediaTools.psm1 next to themselves.
   QUICK START (GUI)
 ------------------------------------------------------------
 
-  1. Put MediaTools.psm1 + Run-MediaTools.ps1 (plus the three
-     CLI scripts if you want them) in any folder you like
-     (e.g. D:\Tools\MediaTools\).
-  2. Right-click Run-MediaTools.ps1 -> "Run with PowerShell".
-     (If Windows asks, allow it.)
+  1. Put MediaTools.psm1 + Run-MediaTools.ps1 + run.bat
+     (plus the three CLI scripts if you want them) in any
+     folder you like (e.g. D:\Tools\MediaTools\).
+  2. Double-click run.bat and answer Yes to the UAC prompt.
+     (Or right-click Run-MediaTools.ps1 -> "Run with
+     PowerShell" to run without admin rights.)
   3. In the GUI:
-        - Click Browse... and pick your target folder
+        - Click Browse... and pick your source folder
           (e.g. D:\Photos).
+        - In the Output card choose where results go
+          (source folder, or another folder/drive), whether
+          files are moved or copied, and whether images and
+          videos are kept separate or together.
         - All three operations are enabled by default.
           Untick any you want to skip.
         - For Consolidate, every known media format is
@@ -70,9 +117,11 @@ GUI each look for MediaTools.psm1 next to themselves.
           "Customize file types" and use the Include /
           Exclude boxes (see "GUI DETAILS" below for
           syntax).
-        - For a first run, tick "Dry run" on each operation
-          to preview without changing anything.
-        - Click Run.
+        - For a first run, switch on "Dry run" (top right of
+          the window). The Run button changes to "Preview";
+          nothing is changed, but the logs show everything
+          that would happen.
+        - Click Run (or Preview).
   4. Watch the progress bar and ETA. The Cancel button stops
      work cleanly between files at any point.
   5. A summary dialog appears when the run finishes, and
@@ -94,16 +143,16 @@ Cleanup goes first so:
 
 Consolidate goes second so:
   - Everything matching the active extension filter ends
-    up in images\ and videos\.
+    up in images\ and videos\ (or media\) in the output
+    location.
   - Anything filtered out (via the Exclude list, or simply
     not on the Include list) stays in place untouched.
 
 Sort by year goes last so:
-  - It only has to look at images\ and videos\ -- the two
-    folders where everything you wanted to organize now
-    lives.
-  - The GUI automatically runs sort once for each of these
-    two subfolders.
+  - It only has to look at the output folders -- where
+    everything you wanted to organize now lives.
+  - The GUI automatically runs sort once for each output
+    folder (images\ and videos\, or just media\).
 
 
 ------------------------------------------------------------
@@ -143,10 +192,59 @@ MediaTools.psm1, or use the GUI for include/exclude control.
   GUI DETAILS
 ------------------------------------------------------------
 
+Output card (applies to Consolidate and Sort by year):
+
+  Output location
+      Source folder        -- images\ / videos\ / media\ are
+                              created inside the source folder.
+      Other folder or drive -- type a path or click Browse...
+                              (e.g. E:\ or D:\Sorted). The
+                              folder is created if needed.
+  File transfer
+      Move files  -- files leave their original place.
+      Copy files  -- originals stay; copies keep their dates.
+                     Running Copy twice makes duplicates
+                     (named file_1.jpg, ...).
+  Folder layout
+      Separate    -- images\ and videos\
+      Together    -- one media\ folder for both
+  Keep each file's original folder name (checkbox)
+      Each file goes into a subfolder named after the folder
+      it came from. With Sort by year, that subfolder sits
+      under the year:
+          D:\Photos\Holiday\IMG_01.jpg
+              -> images\2019\Holiday\IMG_01.jpg
+      Without Sort by year: images\Holiday\IMG_01.jpg.
+      Only the immediate folder name is kept (not the whole
+      path). Files lying directly in the source folder get
+      the source folder's name (e.g. images\2020\Photos\).
+      Two different source folders with the same name (e.g.
+      two "DCIM" folders) end up in the same subfolder;
+      clashing file names are renamed file_1.jpg, ...
+  ...except date folders (sub-option, on by default)
+      Folder names that are ONLY a date are not kept -- the
+      year folder already says when:
+          D:\Photos\2024-07-03\IMG_02.jpg -> images\2024\IMG_02.jpg
+      Recognized: 2024-07-03, 2024_07_03, 2024.07.03,
+      2024 07 03, 20240703, 2024-07, 03.07.2024, 3-7-24.
+      Names with more text, like "2024-07-03 Lake", are kept.
+
+Cleanup always works on the source folder.
+
+Dry run (top right of the window):
+      One switch for all operations. When it is on, the box
+      turns yellow, the Run button reads "Preview", and
+      every operation only reports what it would do --
+      nothing is moved, copied, sorted or deleted. The run
+      log and transfer log are still written. Note: in a
+      dry run, Sort by year sees the output folders as they
+      are now, so files that Consolidate would bring in are
+      not included in the sort preview.
+
 Three operation cards, top to bottom in execution order:
 
   Card 1 -- Clean up junk
-      Options: Dry run, Permanent delete, Aggressive size
+      Options: Permanent delete, Aggressive size
       filter, Minimum file size (KB).
       Removes dotfiles, Windows junk, files below the size
       threshold, and empty subfolders. Items go to the
@@ -155,8 +253,8 @@ Three operation cards, top to bottom in execution order:
       dialog before starting.
 
   Card 2 -- Consolidate media files
-      Options: Dry run, plus a "Customize file types"
-      expander.
+      Options: duplicate handling (see DUPLICATES below) and
+      a "Customize file types" expander.
       By default the full list of supported image and video
       extensions is used. To narrow the set, expand
       "Customize file types" to reveal two text fields:
@@ -191,7 +289,7 @@ Three operation cards, top to bottom in execution order:
       blocked with a warning.
 
   Card 3 -- Sort by year
-      Options: Dry run, Use file dates only.
+      Options: Use file dates only.
       Sorts the contents of images\ and videos\ (the GUI
       runs this once for each, automatically) into year
       subfolders.
@@ -229,6 +327,77 @@ The log includes:
     summaries (counts, by-year breakdown for sort, MB
     reclaimed for cleanup, etc.).
 
+DUPLICATES LOG (new in 0.3.0)
+
+When "Scan for duplicates" is on, the run also writes
+
+    <script folder>\Logs\Duplicates-YYYY-MM-DD_HHmmss.txt
+
+with a summary (files checked, duplicate groups, extra
+copies and the space they take) and every group of
+identical files, largest wasted space first:
+
+  #1  2 identical files, 1.5 MB each
+    KEEP       2014-04-25 02:06     1.5 MB   20140425_020641.jpg
+               Folder: D:\...\Fotos\2014-07-23
+               Result: Kept
+    DUPLICATE  2014-04-25 02:06     1.5 MB   20140425_020641.jpg
+               Folder: D:\...\Fotos\Pictures\2014-07-23
+               Result: Sent to the Recycle Bin
+
+The date is the file's modified date. Duplicates also show
+up in the transfer log as DUPLICATE lines ("== <kept file>").
+
+TRANSFER LOG (new in 0.3.0)
+
+Every run that moves or copies files (Consolidate and/or
+Sort by year) also writes a clean, per-file report next to
+the run log:
+
+    <script folder>\Logs\Transfers-YYYY-MM-DD_HHmmss.txt
+
+It contains:
+
+  - Header: start/finish time, duration, status (completed,
+    cancelled, interrupted), source and output folder,
+    move or copy, layout, sort settings, file-type filter,
+    computer/user (and whether it ran as Administrator).
+  - Summary: number and size of files handled (images and
+    videos separately), moved/copied counts, files renamed
+    because of a name conflict, failures, where the year came
+    from (metadata or file date), and a per-destination-folder
+    table.
+  - Files, grouped by original folder. One line per file:
+
+      From: D:\Photos\Holiday 2019   (2 files)
+        COPIED      IMG_0001.jpg   2.4 MB   -> E:\Sorted\images\2019
+        COPIED      IMG_0002.jpg   2.1 MB   -> E:\Sorted\images\2019   (renamed to IMG_0002_1.jpg)
+        FAILED      broken.jpg     1.0 MB   !! not transferred -- see FAILURES below
+
+    When Sort by year runs in the same pass, the destination
+    is the final year folder, not the intermediate images\.
+  - Failures: full path and error message for each file
+    that could not be moved or copied.
+
+A copy of the transfer log is also saved next to the
+transferred files, in the output folder (the folder that
+holds images\ / videos\ / media\):
+
+    <output folder>\MediaSort-Transfers-YYYY-MM-DD_HHmmss.txt
+
+So the record travels with the files, e.g. on an external
+drive. Both files are identical; each one's header lists
+where the other is. Clean up never deletes these copies.
+No copy is written when nothing was actually moved or
+copied (e.g. a dry run).
+
+Dry runs produce the same report with "WOULD MOVE" /
+"WOULD COPY" entries, so you can review exactly what a real
+run will do (including any renames) before doing it.
+
+Move-MediaFiles.ps1 and Sort-MediaByYear.ps1 also write a
+transfer log to .\Logs\ when run from the command line.
+
 The GUI's in-window log box shows only the high-level events
 (phase boundaries, warnings, summaries) so it stays
 readable. The disk log captures every detail.
@@ -237,8 +406,8 @@ If a run is cancelled or the window is closed mid-run, the
 log file is still saved with a note marking the
 interruption.
 
-CLI runs do not produce log files automatically. Redirect
-output to capture them:
+CLI runs write only the transfer log (see above), not the
+full run log. Redirect output to capture everything:
 
     .\Cleanup-Junk.ps1 *>&1 | Tee-Object -FilePath cleanup.log
 
@@ -251,8 +420,22 @@ All three CLI scripts default to operating on the folder
 they live in. Pass -Root to override.
 
   Move-MediaFiles.ps1
-      -Root "<path>"    Override target folder.
-      -DryRun           Preview only.
+      -Root "<path>"        Override source folder.
+      -OutputRoot "<path>"  Create the output folders here
+                            instead of in the source folder.
+      -Copy                 Copy instead of move.
+      -KeepTogether         One media\ folder instead of
+                            images\ + videos\.
+      -FindDuplicates       List files with identical content
+                            in Logs\Duplicates-*.txt.
+      -RemoveDuplicates     Also remove the extra copies
+                            (Copy: not copied; Move: sent to
+                            the Recycle Bin).
+      -KeepParentFolder     Put each file in a subfolder
+                            named after its original folder.
+      -SkipDateFolders      With -KeepParentFolder: not for
+                            folders named only by a date.
+      -DryRun               Preview only.
 
   Sort-MediaByYear.ps1
       -Root "<path>"          Override target folder.
@@ -263,6 +446,13 @@ they live in. Pass -Root to override.
       -UnknownFolderName "X"  Folder name for files without
                               a usable date. Default:
                               "Unknown".
+      -KeepParentFolder       Also sort files one folder
+                              down and keep that folder's
+                              name: Holiday\a.jpg ->
+                              2019\Holiday\a.jpg. Folders
+                              named like a year (2019) or
+                              Unknown are treated as already
+                              sorted and left alone.
 
   Cleanup-Junk.ps1
       -Root "<path>"           Override target folder.
@@ -314,6 +504,51 @@ file dates.
 
 
 ------------------------------------------------------------
+  DUPLICATES
+------------------------------------------------------------
+
+Two options in the Consolidate card:
+
+  Scan for duplicates
+      Finds files with byte-for-byte identical content --
+      the name does not matter -- among the source files and
+      the files already in the output folders. Nothing is
+      changed; everything is transferred as usual, and the
+      Duplicates log lists every group.
+
+  Remove duplicates (turns on the scan automatically)
+      One copy of each group is kept and transferred; the
+      extra copies are:
+        Copy mode -- not copied (the originals stay put)
+        Move mode -- sent to the Recycle Bin
+      A file that is identical to one ALREADY in the output
+      folder is treated as an extra copy, so repeating a
+      Copy run no longer creates file_1.jpg duplicates.
+
+Which copy is kept:
+  1. a copy already in the output folder,
+  2. otherwise the one with the oldest modified date,
+  3. otherwise the one with the shortest path.
+
+Safety rules:
+  - An extra copy is only skipped or recycled after the kept
+    copy has been transferred successfully. If the kept copy
+    fails, the next copy is transferred instead and becomes
+    the kept one.
+  - USB sticks, memory cards and network drives have no
+    Recycle Bin. Extra copies there are LEFT IN PLACE, never
+    deleted permanently.
+  - With Move + Remove duplicates the GUI asks for
+    confirmation first. Run with Dry run first and read the
+    Duplicates log.
+
+How files are compared: only files of exactly the same size
+are compared. Their first 64 KB are hashed; files that still
+match are then hashed in full. On large libraries the check
+takes extra time, mostly for big videos of equal size.
+
+
+------------------------------------------------------------
   CLEANUP DETAILS
 ------------------------------------------------------------
 
@@ -326,11 +561,11 @@ Cleanup runs in three internal phases:
        - Windows junk: Thumbs.db, ehthumbs.db, desktop.ini.
        - Temp files: *.tmp, *.temp, *~
        - Files smaller than -MinSizeKB.
-     The size filter SKIPS images\ and videos\ by default
-     so a small-but-real photo is safe; -AggressiveSize
-     removes that protection.
-  3. Empty folders -- deepest first. The images\ and
-     videos\ folders themselves are protected and never
+     The size filter SKIPS images\, videos\ and media\ by
+     default so a small-but-real photo is safe;
+     -AggressiveSize removes that protection.
+  3. Empty folders -- deepest first. The images\, videos\
+     and media\ folders themselves are protected and never
      deleted, even if empty.
 
 Default delete target is the Recycle Bin. Use -Permanent
@@ -382,7 +617,7 @@ version 3. See the LICENSE file for the complete license text.
   SAFETY TIPS
 ------------------------------------------------------------
 
-- Always preview with -DryRun (or the Dry run checkbox)
+- Always preview with -DryRun (or the Dry run switch)
   first. The log will show every intended move or deletion
   so you can spot problems before they happen.
 - For an irreplaceable photo library, run against a copy
@@ -409,6 +644,18 @@ version 3. See the LICENSE file for the complete license text.
     The wrapper scripts and the GUI need the module in the
     same folder as themselves. Make sure all the files
     live side by side.
+
+Network drive missing when started with run.bat
+    Drive letters mapped as a normal user are not visible to
+    programs running as Administrator. Type the UNC path
+    (\\server\share\...) instead, or start
+    Run-MediaTools.ps1 without admin rights.
+
+"Not enough free space on X:"
+    Copying (or moving to a different drive) needs room for
+    every selected file on the destination drive. Free up
+    space, choose another output drive, or use Move on the
+    same drive.
 
 GUI opens, then closes immediately
     Likely a syntax/runtime error. Run from PowerShell

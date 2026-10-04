@@ -10,12 +10,16 @@
         .\Sort-MediaByYear.ps1 -DryRun
         .\Sort-MediaByYear.ps1
         .\Sort-MediaByYear.ps1 -UseFileDateOnly
+        .\Sort-MediaByYear.ps1 -KeepParentFolder   # Holiday\a.jpg -> 2019\Holiday\a.jpg
+        .\Sort-MediaByYear.ps1 -KeepParentFolder -SkipDateFolders   # 2024-07-03\a.jpg -> 2024\a.jpg
 #>
 param(
     [string]$Root,
     [switch]$DryRun,
     [switch]$UseFileDateOnly,
-    [string]$UnknownFolderName='Unknown'
+    [string]$UnknownFolderName='Unknown',
+    [switch]$KeepParentFolder,
+    [switch]$SkipDateFolders
 )
 
 if (-not $Root) {
@@ -33,9 +37,13 @@ Write-Host "Working in: $Root"
 if ($DryRun) { Write-Host "(DRY RUN -- nothing will be moved)" }
 Write-Host ""
 
+$transfers = New-MediaTransferStore
+$started   = Get-Date
+
 $callback = {
     param($e)
     switch ($e.Type) {
+        'transfer' { Register-MediaTransfer -Store $transfers -Transfer $e }
         'scan-done' { Write-Host "Found $($e.Total) media files in this folder." -ForegroundColor Cyan }
         'log' {
             if ($e.Level -eq 'warn') { Write-Warning $e.Message }
@@ -59,4 +67,20 @@ $callback = {
     }
 }
 
-Invoke-SortMediaByYear -Root $Root -DryRun:$DryRun -UseFileDateOnly:$UseFileDateOnly -UnknownFolderName $UnknownFolderName -OnProgress $callback | Out-Null
+$result = Invoke-SortMediaByYear -Root $Root -DryRun:$DryRun -UseFileDateOnly:$UseFileDateOnly -UnknownFolderName $UnknownFolderName -KeepParentFolder:$KeepParentFolder -SkipDateFolders:$SkipDateFolders -OnProgress $callback
+
+if ($transfers.Records.Count -gt 0) {
+    $logPath = Join-Path (Join-Path $PSScriptRoot 'Logs') ("Transfers-{0}.txt" -f $started.ToString('yyyy-MM-dd_HHmmss'))
+    $info = [ordered]@{
+        'Started'       = $started.ToString('yyyy-MM-dd HH:mm:ss')
+        'Finished'      = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+        'Status'        = $(if ($result.Cancelled) { 'Cancelled' } else { 'Completed' })
+        'Folder'        = $Root
+        'Sort by year'  = $(if ($UseFileDateOnly) { 'File dates only' } else { 'Metadata, else file dates' }) + $(if ($DryRun) { '  -- DRY RUN' } else { '' })
+        'Keep folder name' = $(if ($KeepParentFolder -and $SkipDateFolders) { 'Yes, except date folders' } elseif ($KeepParentFolder) { 'Yes' } else { 'No' })
+        'Started from'  = 'Sort-MediaByYear.ps1 (command line)'
+    }
+    $saved = Write-MediaTransferLog -Path $logPath -Store $transfers -Info $info -CopyToFolder $Root
+    Write-Host "Transfer log: $($saved.Path)"
+    if ($saved.CopyPath) { Write-Host "Copy saved with the files: $($saved.CopyPath)" }
+}

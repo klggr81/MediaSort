@@ -4,8 +4,8 @@
 
     Requires MediaTools.psm1 in the same folder.
 
-    Just double-click this script (or run it from PowerShell). If the
-    script can't run due to execution policy, right-click it ->
+    Easiest: double-click run.bat -- it starts this script in
+    PowerShell as Administrator. Alternatively right-click this script ->
     "Run with PowerShell", or open PowerShell and run:
         Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
         .\Run-MediaTools.ps1
@@ -21,6 +21,13 @@ Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName PresentationCore
 Add-Type -AssemblyName WindowsBase
 Add-Type -AssemblyName System.Windows.Forms
+
+# Keep the interface in English regardless of the Windows display language.
+# (Only the UI culture changes; date parsing still follows regional settings.)
+try { [System.Threading.Thread]::CurrentThread.CurrentUICulture = [System.Globalization.CultureInfo]::GetCultureInfo('en-US') } catch {}
+
+$IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+    [Security.Principal.WindowsBuiltInRole]::Administrator)
 
 # --- Locate and load module -------------------------------------------------
 
@@ -41,7 +48,8 @@ $LogsDir = Join-Path $ScriptDir 'Logs'
 [xml]$xaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Media Tools" Height="720" Width="820"
+        Title="Media Tools" Height="820" Width="840"
+        Language="en-US"
         WindowStartupLocation="CenterScreen"
         Background="#F3F3F3"
         FontFamily="Segoe UI Variable, Segoe UI" FontSize="14"
@@ -139,6 +147,12 @@ $LogsDir = Join-Path $ScriptDir 'Logs'
       <Setter Property="Margin" Value="0,2"/>
     </Style>
 
+    <Style TargetType="RadioButton">
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="Margin" Value="0,2"/>
+    </Style>
+
     <Style TargetType="ProgressBar">
       <Setter Property="Background" Value="#E5E5E5"/>
       <Setter Property="Foreground" Value="#0078D4"/>
@@ -203,11 +217,27 @@ $LogsDir = Join-Path $ScriptDir 'Logs'
     </Grid.RowDefinitions>
 
     <!-- Header -->
-    <StackPanel Grid.Row="0" Margin="0,0,0,16">
-      <TextBlock Text="Media Tools" FontSize="28" FontWeight="SemiBold"/>
-      <TextBlock Text="Clean up junk, consolidate, and sort a folder of photos and videos."
-                 Foreground="#666666" Margin="0,4,0,0"/>
-    </StackPanel>
+    <Grid Grid.Row="0" Margin="0,0,0,16">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
+      <StackPanel Grid.Column="0">
+        <TextBlock Text="Media Tools" FontSize="28" FontWeight="SemiBold"/>
+        <TextBlock Text="Clean up junk, consolidate, and sort a folder of photos and videos."
+                   Foreground="#666666" Margin="0,4,0,0" TextWrapping="Wrap"/>
+      </StackPanel>
+      <!-- One dry-run switch for every operation -->
+      <Border Grid.Column="1" x:Name="DryRunBorder" VerticalAlignment="Center" Margin="16,0,0,0"
+              Background="White" BorderBrush="#D6D6D6" BorderThickness="1" CornerRadius="6" Padding="12,8">
+        <CheckBox x:Name="DryRun" VerticalContentAlignment="Center">
+          <StackPanel>
+            <TextBlock Text="Dry run" FontWeight="SemiBold"/>
+            <TextBlock x:Name="DryRunHint" Text="Off -- changes will be made" FontSize="11" Foreground="#666666"/>
+          </StackPanel>
+        </CheckBox>
+      </Border>
+    </Grid>
 
     <!-- Folder picker -->
     <Border Grid.Row="1" Style="{StaticResource CardBorder}">
@@ -217,7 +247,7 @@ $LogsDir = Join-Path $ScriptDir 'Logs'
           <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
         <StackPanel Grid.Column="0">
-          <TextBlock Text="Target folder" FontWeight="SemiBold" Margin="0,0,0,6"/>
+          <TextBlock Text="Source folder" FontWeight="SemiBold" Margin="0,0,0,6"/>
           <TextBox x:Name="FolderTextBox"/>
         </StackPanel>
         <Button Grid.Column="1" x:Name="BrowseButton" Content="Browse..."
@@ -229,6 +259,58 @@ $LogsDir = Join-Path $ScriptDir 'Logs'
     <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,4,0">
       <StackPanel>
 
+        <!-- Output options -->
+        <Border Style="{StaticResource CardBorder}">
+          <StackPanel>
+            <TextBlock Style="{StaticResource OpHeader}" Text="Output" Margin="0,0,0,10"/>
+
+            <TextBlock Style="{StaticResource FieldLabel}" Text="Output location"/>
+            <RadioButton x:Name="OutParent" GroupName="OutLoc" IsChecked="True"
+                         Content="Source folder (create the output folders inside it)"/>
+            <Grid Margin="0,4,0,0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <RadioButton Grid.Column="0" x:Name="OutCustom" GroupName="OutLoc"
+                           Content="Other folder or drive:" Margin="0,0,10,0"/>
+              <TextBox Grid.Column="1" x:Name="OutputFolderTextBox" IsEnabled="False"/>
+              <Button Grid.Column="2" x:Name="OutputBrowseButton" Content="Browse..."
+                      Margin="10,0,0,0" IsEnabled="False"/>
+            </Grid>
+
+            <TextBlock Style="{StaticResource FieldLabel}" Text="File transfer" Margin="0,14,0,3"/>
+            <StackPanel Orientation="Horizontal">
+              <RadioButton x:Name="ModeMove" GroupName="Mode" IsChecked="True"
+                           Content="Move files" Margin="0,0,24,0"/>
+              <RadioButton x:Name="ModeCopy" GroupName="Mode"
+                           Content="Copy files (originals stay where they are)"/>
+            </StackPanel>
+
+            <TextBlock Style="{StaticResource FieldLabel}" Text="Folder layout" Margin="0,14,0,3"/>
+            <StackPanel Orientation="Horizontal">
+              <RadioButton x:Name="LayoutSeparate" GroupName="Layout" IsChecked="True" Margin="0,0,24,0">
+                <TextBlock>Separate: <Run FontWeight="SemiBold">images\</Run> and <Run FontWeight="SemiBold">videos\</Run></TextBlock>
+              </RadioButton>
+              <RadioButton x:Name="LayoutTogether" GroupName="Layout">
+                <TextBlock>Together: one <Run FontWeight="SemiBold">media\</Run> folder</TextBlock>
+              </RadioButton>
+            </StackPanel>
+            <CheckBox x:Name="KeepParentFolder" Margin="0,10,0,0">
+              <TextBlock TextWrapping="Wrap">Keep each file's original folder name, e.g.
+                <Run FontFamily="Consolas">Holiday\IMG_01.jpg</Run> becomes
+                <Run FontFamily="Consolas">images\2019\Holiday\IMG_01.jpg</Run></TextBlock>
+            </CheckBox>
+            <CheckBox x:Name="SkipDateFolders" Margin="28,2,0,0" IsChecked="True" IsEnabled="False">
+              <TextBlock TextWrapping="Wrap">...except date folders (e.g.
+                <Run FontFamily="Consolas">2024-07-03</Run>,
+                <Run FontFamily="Consolas">20240703</Run>,
+                <Run FontFamily="Consolas">03.07.2024</Run>): those files go straight into the year folder</TextBlock>
+            </CheckBox>
+          </StackPanel>
+        </Border>
+
         <!-- 1. Cleanup -->
         <Border Style="{StaticResource CardBorder}">
           <StackPanel>
@@ -239,7 +321,6 @@ $LogsDir = Join-Path $ScriptDir 'Logs'
               Removes dotfiles (.DS_Store, ._*), Thumbs.db, small files, junk folders, and empty subfolders. Items go to the Recycle Bin by default.
             </TextBlock>
             <StackPanel Orientation="Horizontal" Margin="28,0,0,4">
-              <CheckBox x:Name="CleanupDryRun" Content="Dry run" Margin="0,0,18,0"/>
               <CheckBox x:Name="CleanupPermanent" Content="Permanent delete" Margin="0,0,18,0"/>
               <CheckBox x:Name="CleanupAggressive" Content="Aggressive size filter"/>
             </StackPanel>
@@ -258,13 +339,18 @@ $LogsDir = Join-Path $ScriptDir 'Logs'
               <TextBlock Style="{StaticResource OpHeader}" Text="2. Consolidate media files"/>
             </CheckBox>
             <TextBlock Style="{StaticResource OpHint}">
-              Recursively gathers images into <Run FontWeight="SemiBold">images\</Run> and videos into <Run FontWeight="SemiBold">videos\</Run>. By default all known media types are included.
+              Recursively gathers images and videos from the source folder into the output folder, using the transfer mode and layout chosen above. By default all known media types are included.
             </TextBlock>
-            <StackPanel Orientation="Horizontal" Margin="28,0,0,4">
-              <CheckBox x:Name="MoveDryRun" Content="Dry run (preview only)"/>
+            <StackPanel Margin="28,0,0,6">
+              <CheckBox x:Name="DupScan">
+                <TextBlock TextWrapping="Wrap">Scan for duplicates (identical content) and list them in a Duplicates log</TextBlock>
+              </CheckBox>
+              <CheckBox x:Name="DupRemove">
+                <TextBlock TextWrapping="Wrap">Remove duplicates -- keep one copy; with Copy the extra copies are not copied, with Move they are sent to the Recycle Bin</TextBlock>
+              </CheckBox>
             </StackPanel>
 
-            <Expander x:Name="FileTypesExpander" Margin="28,10,0,0"
+            <Expander x:Name="FileTypesExpander" Margin="28,0,0,0"
                       Header="Customize file types" Foreground="#0078D4">
               <Border Background="#FAFAFA" BorderBrush="#E5E5E5" BorderThickness="1"
                       CornerRadius="4" Padding="12" Margin="0,8,0,0">
@@ -293,10 +379,9 @@ $LogsDir = Join-Path $ScriptDir 'Logs'
               <TextBlock Style="{StaticResource OpHeader}" Text="3. Sort by year"/>
             </CheckBox>
             <TextBlock Style="{StaticResource OpHint}">
-              Sorts files in <Run FontWeight="SemiBold">images\</Run> and <Run FontWeight="SemiBold">videos\</Run> into year subfolders using metadata when available.
+              Sorts files in the output folder(s) into year subfolders using metadata when available.
             </TextBlock>
             <StackPanel Orientation="Horizontal" Margin="28,0,0,0">
-              <CheckBox x:Name="SortDryRun" Content="Dry run" Margin="0,0,18,0"/>
               <CheckBox x:Name="SortFileDateOnly" Content="Use file dates only (skip metadata)"/>
             </StackPanel>
           </StackPanel>
@@ -375,9 +460,12 @@ $window = [Windows.Markup.XamlReader]::Load($reader)
 
 $controls = @{}
 @('FolderTextBox','BrowseButton',
-  'EnableCleanup','CleanupDryRun','CleanupPermanent','CleanupAggressive','CleanupMinSize',
-  'EnableMove','MoveDryRun','FileTypesExpander','IncludeBox','ExcludeBox',
-  'EnableSort','SortDryRun','SortFileDateOnly',
+  'OutParent','OutCustom','OutputFolderTextBox','OutputBrowseButton',
+  'ModeMove','ModeCopy','LayoutSeparate','LayoutTogether','KeepParentFolder','SkipDateFolders',
+  'DryRun','DryRunBorder','DryRunHint',
+  'EnableCleanup','CleanupPermanent','CleanupAggressive','CleanupMinSize',
+  'EnableMove','DupScan','DupRemove','FileTypesExpander','IncludeBox','ExcludeBox',
+  'EnableSort','SortFileDateOnly',
   'StatusText','StatsText','ProgressBar','CurrentFileText',
   'LogExpander','LogBox','LogScroller','LogPathText','OpenLogsFolderText',
   'ElapsedText','CancelButton','RunButton') | ForEach-Object {
@@ -385,6 +473,9 @@ $controls = @{}
 }
 
 $controls.FolderTextBox.Text = $ScriptDir
+$AppVersion = Get-MediaSortVersion
+$window.Title = "Media Tools $AppVersion"
+if ($IsAdmin) { $window.Title += " (Administrator)" }
 
 # --- Defaults for the consolidate extension fields -------------------------
 
@@ -408,6 +499,12 @@ $script:state = @{
     LastTotal    = 0
     LogPath      = $null
     LogWriter    = $null
+    Transfers    = $null
+    TransferLogPath = $null
+    TransferLogCopyPath = $null
+    Duplicates   = $null
+    DuplicatesLogPath = $null
+    RunInfo      = $null
 }
 
 # --- Helpers ----------------------------------------------------------------
@@ -455,16 +552,41 @@ function Append-Log {
     }
 }
 
+$OptionControls = @(
+    'OutParent','OutCustom','ModeMove','ModeCopy','LayoutSeparate','LayoutTogether','KeepParentFolder','SkipDateFolders',
+    'DryRun',
+    'EnableCleanup','CleanupPermanent','CleanupAggressive','CleanupMinSize',
+    'EnableMove','DupScan','DupRemove','FileTypesExpander','IncludeBox','ExcludeBox',
+    'EnableSort','SortFileDateOnly')
+
+function Update-OutputControls {
+    $custom = [bool]$controls.OutCustom.IsChecked -and $controls.OutCustom.IsEnabled
+    $controls.OutputFolderTextBox.IsEnabled = $custom
+    $controls.OutputBrowseButton.IsEnabled  = $custom
+}
+
+function Update-KeepParentControls {
+    $controls.SkipDateFolders.IsEnabled = [bool]$controls.KeepParentFolder.IsChecked -and $controls.KeepParentFolder.IsEnabled
+}
+
+function Update-DupControls {
+    if ($controls.DupRemove.IsChecked) {
+        $controls.DupScan.IsChecked = $true
+        $controls.DupScan.IsEnabled = $false
+    } elseif ($controls.DupRemove.IsEnabled) {
+        $controls.DupScan.IsEnabled = $true
+    }
+}
+
 function Set-Idle {
     $controls.RunButton.IsEnabled    = $true
     $controls.CancelButton.IsEnabled = $false
     $controls.FolderTextBox.IsEnabled = $true
     $controls.BrowseButton.IsEnabled  = $true
-    foreach ($n in 'EnableCleanup','CleanupDryRun','CleanupPermanent','CleanupAggressive','CleanupMinSize',
-                   'EnableMove','MoveDryRun','FileTypesExpander','IncludeBox','ExcludeBox',
-                   'EnableSort','SortDryRun','SortFileDateOnly') {
-        $controls[$n].IsEnabled = $true
-    }
+    foreach ($n in $OptionControls) { $controls[$n].IsEnabled = $true }
+    Update-OutputControls
+    Update-DupControls
+    Update-KeepParentControls
 }
 
 function Set-Busy {
@@ -472,10 +594,23 @@ function Set-Busy {
     $controls.CancelButton.IsEnabled = $true
     $controls.FolderTextBox.IsEnabled = $false
     $controls.BrowseButton.IsEnabled  = $false
-    foreach ($n in 'EnableCleanup','CleanupDryRun','CleanupPermanent','CleanupAggressive','CleanupMinSize',
-                   'EnableMove','MoveDryRun','FileTypesExpander','IncludeBox','ExcludeBox',
-                   'EnableSort','SortDryRun','SortFileDateOnly') {
-        $controls[$n].IsEnabled = $false
+    foreach ($n in $OptionControls) { $controls[$n].IsEnabled = $false }
+    Update-OutputControls
+}
+
+function Get-OutputSettings {
+    # Returns @{ Root; Copy; KeepTogether; Folders = @(full paths) }
+    $outRoot = $controls.FolderTextBox.Text.Trim()
+    if ($controls.OutCustom.IsChecked) { $outRoot = $controls.OutputFolderTextBox.Text.Trim() }
+    $together = [bool]$controls.LayoutTogether.IsChecked
+    $folders = if ($together) { @('media') } else { @('images','videos') }
+    return @{
+        Root         = $outRoot
+        Copy         = [bool]$controls.ModeCopy.IsChecked
+        KeepTogether = $together
+        KeepParent   = [bool]$controls.KeepParentFolder.IsChecked
+        SkipDates    = [bool]$controls.KeepParentFolder.IsChecked -and [bool]$controls.SkipDateFolders.IsChecked
+        Folders      =@($folders | ForEach-Object { [IO.Path]::Combine($outRoot, $_) })
     }
 }
 
@@ -526,6 +661,7 @@ function Resolve-ConsolidateExtensions {
 
 function Build-OperationList {
     $ops = @()
+    $dry = [bool]$controls.DryRun.IsChecked   # one switch for every operation
 
     # 1. Cleanup first
     if ($controls.EnableCleanup.IsChecked) {
@@ -533,7 +669,7 @@ function Build-OperationList {
         [int]::TryParse($controls.CleanupMinSize.Text, [ref]$sz) | Out-Null
         $ops += [pscustomobject]@{
             Name           = 'cleanup'
-            DryRun         = [bool]$controls.CleanupDryRun.IsChecked
+            DryRun         = $dry
             Permanent      = [bool]$controls.CleanupPermanent.IsChecked
             AggressiveSize = [bool]$controls.CleanupAggressive.IsChecked
             MinSizeKB      = $sz
@@ -541,25 +677,37 @@ function Build-OperationList {
     }
 
     # 2. Consolidate
+    $out = Get-OutputSettings
+
     if ($controls.EnableMove.IsChecked) {
         $resolved = Resolve-ConsolidateExtensions
         $ops += [pscustomobject]@{
             Name             = 'move'
-            DryRun           = [bool]$controls.MoveDryRun.IsChecked
+            DryRun           = $dry
+            OutputRoot       = $out.Root
+            Copy             = $out.Copy
+            KeepTogether     = $out.KeepTogether
+            KeepParent       = $out.KeepParent
+            SkipDates        = $out.SkipDates
             ImageExtensions  = $resolved.Images
             VideoExtensions  = $resolved.Videos
             Description      = $resolved.Description
+            FindDuplicates   = [bool]$controls.DupScan.IsChecked
+            RemoveDuplicates = [bool]$controls.DupRemove.IsChecked
         }
     }
 
-    # 3. Sort
+    # 3. Sort (inside each output folder)
     if ($controls.EnableSort.IsChecked) {
         $opts = @{
-            DryRun          = [bool]$controls.SortDryRun.IsChecked
+            DryRun          = $dry
             UseFileDateOnly = [bool]$controls.SortFileDateOnly.IsChecked
+            KeepParent      = $out.KeepParent
+            SkipDates       = $out.SkipDates
         }
-        $ops += [pscustomobject]@{ Name='sort'; Target='images'; Options=$opts }
-        $ops += [pscustomobject]@{ Name='sort'; Target='videos'; Options=$opts }
+        foreach ($folder in $out.Folders) {
+            $ops += [pscustomobject]@{ Name='sort'; Target=(Split-Path $folder -Leaf); TargetPath=$folder; Options=$opts }
+        }
     }
 
     return ,$ops
@@ -576,15 +724,23 @@ function Open-LogFile {
 
     $stamp = (Get-Date).ToString('yyyy-MM-dd_HHmmss')
     $script:state.LogPath = Join-Path $LogsDir "MediaTools-$stamp.txt"
+    $script:state.TransferLogPath = Join-Path $LogsDir "Transfers-$stamp.txt"
+    $script:state.DuplicatesLogPath = Join-Path $LogsDir "Duplicates-$stamp.txt"
     $script:state.LogWriter = New-Object System.IO.StreamWriter $script:state.LogPath, $false, ([System.Text.Encoding]::UTF8)
     $script:state.LogWriter.AutoFlush = $true
 
     $w = $script:state.LogWriter
     $w.WriteLine("============================================================")
-    $w.WriteLine("  Media Tools -- Run Log")
+    $w.WriteLine("  Media Tools $AppVersion -- Run Log")
     $w.WriteLine("============================================================")
     $w.WriteLine("  Started:    $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
-    $w.WriteLine("  Folder:     $Root")
+    $w.WriteLine("  Source:     $Root")
+    $out = Get-OutputSettings
+    $w.WriteLine("  Output:     $($out.Root)")
+    $w.WriteLine("  Transfer:   $(if ($out.Copy) { 'Copy' } else { 'Move' })")
+    $w.WriteLine("  Layout:     $(if ($out.KeepTogether) { 'Together (media\)' } else { 'Separate (images\ + videos\)' })")
+    $w.WriteLine("  Keep folder name: $(if ($out.SkipDates) { 'Yes, except date folders' } elseif ($out.KeepParent) { 'Yes' } else { 'No' })")
+    $w.WriteLine("  Dry run:    $(if ($controls.DryRun.IsChecked) { 'YES -- preview only, nothing is changed' } else { 'No' })")
     $w.WriteLine("  Logs path:  $($script:state.LogPath)")
     $w.WriteLine("")
     $w.WriteLine("  Operations:")
@@ -600,6 +756,9 @@ function Open-LogFile {
             'move' {
                 $bits = @()
                 if ($op.DryRun) { $bits += 'DryRun' }
+                $bits += $(if ($op.Copy) { 'Copy' } else { 'Move' })
+                if ($op.KeepTogether) { $bits += 'Together' }
+                if ($op.RemoveDuplicates) { $bits += 'RemoveDuplicates' } elseif ($op.FindDuplicates) { $bits += 'FindDuplicates' }
                 $bits += "$($op.ImageExtensions.Count) image types"
                 $bits += "$($op.VideoExtensions.Count) video types"
                 $w.WriteLine("    - Consolidate media        [$($bits -join ', ')]")
@@ -608,7 +767,7 @@ function Open-LogFile {
                 $w.WriteLine("        Videos: $($op.VideoExtensions -join ' ')")
             }
             'sort' {
-                $bits = @("target=$($op.Target)\")
+                $bits = @("target=$($op.TargetPath)")
                 if ($op.Options.DryRun)          { $bits += 'DryRun' }
                 if ($op.Options.UseFileDateOnly) { $bits += 'UseFileDateOnly' }
                 $w.WriteLine("    - Sort by year             [$($bits -join ', ')]")
@@ -630,6 +789,96 @@ function Close-LogFile {
         $script:state.LogWriter.Dispose()
     } catch {}
     $script:state.LogWriter = $null
+}
+
+function New-RunInfo {
+    # Settings shown in the transfer log header (captured when Run is clicked).
+    param([string]$Root, $Operations)
+    $out    = Get-OutputSettings
+    $moveOp = $Operations | Where-Object { $_.Name -eq 'move' } | Select-Object -First 1
+    $sortOp = $Operations | Where-Object { $_.Name -eq 'sort' } | Select-Object -First 1
+
+    $consolidate = 'Off'
+    if ($moveOp) {
+        $consolidate = if ($out.Copy) { 'Copy (originals kept in place)' } else { 'Move' }
+        if ($moveOp.DryRun) { $consolidate += '  -- DRY RUN' }
+    }
+    $sort = 'Off'
+    if ($sortOp) {
+        $sort = if ($sortOp.Options.UseFileDateOnly) { 'On (file dates only)' } else { 'On (metadata, else file dates)' }
+        if ($sortOp.Options.DryRun) { $sort += '  -- DRY RUN' }
+    }
+
+    $info = [ordered]@{
+        'Started'       = $script:state.StartTime.ToString('yyyy-MM-dd HH:mm:ss')
+        'Source folder' = $Root
+        'Output folder' = $out.Root
+        'Consolidate'   = $consolidate
+        'Layout'        = $(if ($out.KeepTogether) { 'Together (media\)' } else { 'Separate (images\ + videos\)' })
+        'Keep folder name' = $(if ($out.SkipDates) { 'Yes, except date folders (year\original folder\file)' } elseif ($out.KeepParent) { 'Yes (year\original folder\file)' } else { 'No' })
+        'Sort by year'  = $sort
+    }
+    if ($moveOp) {
+        $info['File types'] = $moveOp.Description
+        $info['Duplicates'] = if ($moveOp.RemoveDuplicates) {
+            if ($out.Copy) { 'Remove (extra copies are not copied)' } else { 'Remove (extra copies go to the Recycle Bin)' }
+        } elseif ($moveOp.FindDuplicates) { 'Scan only' } else { 'Off' }
+    }
+    return $info
+}
+
+function Save-TransferLog {
+    param([string]$Status)
+    $store = $script:state.Transfers
+    if (-not $store -or $store.Records.Count -eq 0) { return }
+
+    if (-not $script:state.TransferLogPath) {
+        $script:state.TransferLogPath = Join-Path $LogsDir ("Transfers-{0}.txt" -f $script:state.StartTime.ToString('yyyy-MM-dd_HHmmss'))
+    }
+    $info = [ordered]@{}
+    foreach ($k in $script:state.RunInfo.Keys) {
+        $info[$k] = $script:state.RunInfo[$k]
+        if ($k -eq 'Started') {
+            $info['Finished'] = "$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))  (took $(Format-Duration ((Get-Date) - $script:state.StartTime)))"
+            $info['Status']   = $Status
+        }
+    }
+    if ($script:state.LogPath) { $info['Run log'] = $script:state.LogPath }
+
+    try {
+        # A copy goes into the output folder, next to the transferred files.
+        $saved = Write-MediaTransferLog -Path $script:state.TransferLogPath -Store $store -Info $info `
+                    -CopyToFolder $script:state.RunInfo['Output folder']
+        $script:state.TransferLogCopyPath = $saved.CopyPath
+        Append-Log "Transfer log saved: $($saved.Path)"
+        if ($saved.CopyPath) { Append-Log "Transfer log copy saved with the files: $($saved.CopyPath)" }
+    } catch {
+        Append-Log "Could not write transfer log: $($_.Exception.Message)" 'warn'
+        $script:state.TransferLogPath = $null
+    }
+}
+
+function Save-DuplicateLog {
+    param([string]$Status)
+    $dups = $script:state.Duplicates
+    if (-not $dups) { return }
+    if (-not $script:state.DuplicatesLogPath) {
+        $script:state.DuplicatesLogPath = Join-Path $LogsDir ("Duplicates-{0}.txt" -f $script:state.StartTime.ToString('yyyy-MM-dd_HHmmss'))
+    }
+    $info = [ordered]@{}
+    foreach ($k in $script:state.RunInfo.Keys) {
+        if ($k -in 'Duplicates', 'File types', 'Sort by year', 'Keep folder name', 'Layout') { continue }
+        $info[$k] = $script:state.RunInfo[$k]
+        if ($k -eq 'Started') { $info['Status'] = $Status }
+    }
+    if ($script:state.TransferLogPath) { $info['Transfer log'] = $script:state.TransferLogPath }
+    try {
+        Write-MediaDuplicateLog -Path $script:state.DuplicatesLogPath -Duplicates $dups -Info $info | Out-Null
+        Append-Log "Duplicates log saved: $($script:state.DuplicatesLogPath)"
+    } catch {
+        Append-Log "Could not write duplicates log: $($_.Exception.Message)" 'warn'
+        $script:state.DuplicatesLogPath = $null
+    }
 }
 
 function Write-LogFooter {
@@ -663,11 +912,19 @@ function Write-LogFooter {
                 if ($s.Cancelled)    { $w.WriteLine("    (Cancelled.)") }
             }
             'move' {
+                $verb = if ($s.Copy) { 'copied' } else { 'moved' }
                 $w.WriteLine("  Consolidate:")
-                $w.WriteLine(("    Images moved : {0}" -f $s.ImageCount))
-                $w.WriteLine(("    Videos moved : {0}" -f $s.VideoCount))
+                $w.WriteLine(("    Images {0} : {1}" -f $verb, $s.ImageCount))
+                $w.WriteLine(("    Videos {0} : {1}" -f $verb, $s.VideoCount))
+                $w.WriteLine(("    Output to    : {0}" -f ($s.OutputFolders -join ', ')))
+                if ($op.FindDuplicates) {
+                    $w.WriteLine(("    Duplicate groups   : {0}" -f $s.DuplicateGroups))
+                    if ($op.RemoveDuplicates) {
+                        $w.WriteLine(("    Duplicates removed : {0}  ({1:N1} MB)" -f $s.DuplicatesRemoved, ($s.DuplicateBytes / 1MB)))
+                    }
+                }
                 if ($s.Failed -gt 0) { $w.WriteLine(("    Failures     : {0}" -f $s.Failed)) }
-                if ($s.DryRun)       { $w.WriteLine("    (Dry run -- nothing actually moved.)") }
+                if ($s.DryRun)       { $w.WriteLine("    (Dry run -- nothing actually $verb.)") }
                 if ($s.Cancelled)    { $w.WriteLine("    (Cancelled.)") }
             }
             'sort' {
@@ -707,10 +964,19 @@ function Show-Summary {
                 $msg += "`n"
             }
             'move' {
-                $msg += "Consolidate: $($s.ImageCount) images, $($s.VideoCount) videos moved"
+                $verb = if ($s.Copy) { 'copied' } else { 'moved' }
+                $msg += "Consolidate: $($s.ImageCount) images, $($s.VideoCount) videos $verb"
                 if ($s.Failed -gt 0) { $msg += "  ($($s.Failed) failed)" }
                 if ($s.DryRun)       { $msg += "  (dry run)" }
                 $msg += "`n"
+                if ($op.FindDuplicates) {
+                    $msg += "Duplicates: $($s.DuplicateGroups) groups found"
+                    if ($op.RemoveDuplicates) {
+                        $msg += (", {0} extra copies {1} ({2:N1} MB)" -f $s.DuplicatesRemoved,
+                                 $(if ($s.DryRun) { 'would be removed' } elseif ($s.Copy) { 'not copied' } else { 'removed' }), ($s.DuplicateBytes / 1MB))
+                    }
+                    $msg += "`n"
+                }
             }
             'sort' {
                 $tag = if ($op.Target) { " [$($op.Target)]" } else { "" }
@@ -722,6 +988,15 @@ function Show-Summary {
         }
     }
     $msg += "`nLog saved to:`n$($script:state.LogPath)"
+    if ($script:state.TransferLogPath -and (Test-Path -LiteralPath $script:state.TransferLogPath)) {
+        $msg += "`n`nTransfer log (every file moved/copied):`n$($script:state.TransferLogPath)"
+        if ($script:state.TransferLogCopyPath) {
+            $msg += "`n`nCopy saved with the files:`n$($script:state.TransferLogCopyPath)"
+        }
+    }
+    if ($script:state.DuplicatesLogPath -and (Test-Path -LiteralPath $script:state.DuplicatesLogPath)) {
+        $msg += "`n`nDuplicates log:`n$($script:state.DuplicatesLogPath)"
+    }
     [System.Windows.MessageBox]::Show($msg, "Media Tools", 'OK', 'Information') | Out-Null
 }
 
@@ -732,6 +1007,20 @@ function Start-Work {
     if (-not (Test-Path -LiteralPath $root)) {
         [System.Windows.MessageBox]::Show("Folder not found:`n$root", "Media Tools", 'OK', 'Error') | Out-Null
         return
+    }
+
+    if ($controls.OutCustom.IsChecked) {
+        $outPath = $controls.OutputFolderTextBox.Text.Trim()
+        if (-not $outPath -or -not [IO.Path]::IsPathRooted($outPath)) {
+            [System.Windows.MessageBox]::Show("Please choose an output folder or drive (a full path such as E:\ or D:\Sorted).",
+                "Media Tools", 'OK', 'Warning') | Out-Null
+            return
+        }
+        $outDrive = [IO.Path]::GetPathRoot($outPath)
+        if (-not (Test-Path -LiteralPath $outDrive)) {
+            [System.Windows.MessageBox]::Show("Output drive not found: $outDrive", "Media Tools", 'OK', 'Error') | Out-Null
+            return
+        }
     }
 
     $ops = Build-OperationList
@@ -747,6 +1036,14 @@ function Start-Work {
             "Consolidate is enabled but the Include/Exclude filters leave no file types.`nClear both fields to use the defaults.",
             "Media Tools", 'OK', 'Warning') | Out-Null
         return
+    }
+
+    # Confirm before duplicates go to the Recycle Bin
+    if ($moveOp -and $moveOp.RemoveDuplicates -and -not $moveOp.Copy -and -not $moveOp.DryRun) {
+        $confirm = [System.Windows.MessageBox]::Show(
+            "Remove duplicates is on with Move.`n`nFor every set of identical files one copy is moved; the other copies are sent to the Recycle Bin (only after the kept copy was moved successfully). On drives without a Recycle Bin they are left in place.`n`nTip: run with Dry run first and check the Duplicates log.`n`nContinue?",
+            "Media Tools", 'YesNo', 'Warning')
+        if ($confirm -ne 'Yes') { return }
     }
 
     # Confirm before permanent delete
@@ -765,6 +1062,12 @@ function Start-Work {
     $script:state.LastCurrent = 0
     $script:state.EwmaRate   = $null
     $script:state.Summaries  = @()
+    $script:state.Transfers  = New-MediaTransferStore
+    $script:state.TransferLogPath = $null
+    $script:state.TransferLogCopyPath = $null
+    $script:state.Duplicates = $null
+    $script:state.DuplicatesLogPath = $null
+    $script:state.RunInfo    = New-RunInfo -Root $root -Operations $ops
     $script:state.LastTotal  = 0
 
     $controls.ProgressBar.Value = 0
@@ -814,17 +1117,25 @@ function Start-Work {
                     }
                     'move' {
                         $r = Invoke-MoveMedia -Root $root -DryRun:$op.DryRun `
+                                              -OutputRoot $op.OutputRoot `
+                                              -Copy:$op.Copy -KeepTogether:$op.KeepTogether `
+                                              -KeepParentFolder:$op.KeepParent `
+                                              -SkipDateFolders:$op.SkipDates `
+                                              -FindDuplicates:$op.FindDuplicates `
+                                              -RemoveDuplicates:$op.RemoveDuplicates `
                                               -ImageExtensions $op.ImageExtensions `
                                               -VideoExtensions $op.VideoExtensions `
                                               -OnProgress $cb -CancelToken $cancelToken
                         $queue.Enqueue(@{ Type='op-done'; Op=$op; Result=$r })
                     }
                     'sort' {
-                        $target = Join-Path $root $op.Target
+                        $target = $op.TargetPath
                         if (Test-Path -LiteralPath $target) {
                             $o = $op.Options
                             $r = Invoke-SortMediaByYear -Root $target -DryRun:$o.DryRun `
                                     -UseFileDateOnly:$o.UseFileDateOnly `
+                                    -KeepParentFolder:$o.KeepParent `
+                                    -SkipDateFolders:$o.SkipDates `
                                     -OnProgress $cb -CancelToken $cancelToken
                             $queue.Enqueue(@{ Type='op-done'; Op=$op; Result=$r })
                         } else {
@@ -865,6 +1176,7 @@ $timer.Add_Tick({
                 $phaseName = switch ($evt.Phase) {
                     'cleanup' { 'Cleaning up junk' }
                     'move'    { 'Consolidating media files' }
+                    'dupscan' { 'Checking for duplicates' }
                     'sort'    { 'Sorting by year' }
                     default   { $evt.Phase }
                 }
@@ -896,6 +1208,12 @@ $timer.Add_Tick({
             'log' {
                 Append-Log $evt.Message $evt.Level
             }
+            'duplicates' {
+                $script:state.Duplicates = $evt
+            }
+            'transfer' {
+                Register-MediaTransfer -Store $script:state.Transfers -Transfer $evt
+            }
             'op-done' {
                 $script:state.Summaries += @{ Op=$evt.Op; Result=$evt.Result }
             }
@@ -915,6 +1233,8 @@ $timer.Add_Tick({
                 $controls.CurrentFileText.Text = " "
 
                 Append-Log "Run finished."
+                Save-TransferLog -Status $(if ($cancelled) { 'Cancelled by user' } else { 'Completed' })
+                Save-DuplicateLog -Status $(if ($cancelled) { 'Cancelled by user' } else { 'Completed' })
                 Write-LogFooter -Cancelled $cancelled
                 Close-LogFile
 
@@ -945,6 +1265,43 @@ $controls.BrowseButton.Add_Click({
         $controls.FolderTextBox.Text = $dlg.SelectedPath
     }
 })
+
+$controls.OutputBrowseButton.Add_Click({
+    $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
+    $dlg.Description = "Select the output folder or drive"
+    $dlg.ShowNewFolderButton = $true
+    if ($controls.OutputFolderTextBox.Text -and (Test-Path -LiteralPath $controls.OutputFolderTextBox.Text)) {
+        $dlg.SelectedPath = $controls.OutputFolderTextBox.Text
+    }
+    if ($dlg.ShowDialog() -eq 'OK') {
+        $controls.OutputFolderTextBox.Text = $dlg.SelectedPath
+    }
+})
+
+function Update-DryRunLook {
+    if ($controls.DryRun.IsChecked) {
+        $controls.DryRunBorder.Background  = '#FFF4CE'
+        $controls.DryRunBorder.BorderBrush = '#E0B000'
+        $controls.DryRunHint.Text = 'On -- preview only, nothing is changed'
+        $controls.RunButton.Content = 'Preview'
+    } else {
+        $controls.DryRunBorder.Background  = 'White'
+        $controls.DryRunBorder.BorderBrush = '#D6D6D6'
+        $controls.DryRunHint.Text = 'Off -- changes will be made'
+        $controls.RunButton.Content = 'Run'
+    }
+}
+$controls.KeepParentFolder.Add_Checked({ Update-KeepParentControls })
+$controls.KeepParentFolder.Add_Unchecked({ Update-KeepParentControls })
+
+$controls.DupRemove.Add_Checked({ Update-DupControls })
+$controls.DupRemove.Add_Unchecked({ Update-DupControls })
+
+$controls.DryRun.Add_Checked({ Update-DryRunLook })
+$controls.DryRun.Add_Unchecked({ Update-DryRunLook })
+
+$controls.OutParent.Add_Checked({ Update-OutputControls })
+$controls.OutCustom.Add_Checked({ Update-OutputControls })
 
 $controls.RunButton.Add_Click({ Start-Work })
 
@@ -981,6 +1338,14 @@ $window.Add_Closing({
         if ($script:state.Runspace) {
             try { $script:state.Runspace.Dispose() } catch {}
         }
+        # Collect whatever already arrived so the transfer log reflects what really happened.
+        $evt = $null
+        while ($script:state.Queue.TryDequeue([ref]$evt)) {
+            if ($evt.Type -eq 'transfer') { Register-MediaTransfer -Store $script:state.Transfers -Transfer $evt }
+            if ($evt.Type -eq 'duplicates') { $script:state.Duplicates = $evt }
+        }
+        Save-TransferLog -Status 'Interrupted (window closed mid-run)'
+        Save-DuplicateLog -Status 'Interrupted (window closed mid-run)'
         Close-LogFile -ClosingNote "`r`n[Window closed mid-run]"
     } else {
         Close-LogFile
